@@ -42,6 +42,7 @@ private:
         void RefreshListing() { browser_.Load(browser_.CurrentPath()); }
         const FileBrowser::Entry* CurrentEntry() const;
         std::filesystem::path CurrentPath() const { return browser_.CurrentPath(); }
+        void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -61,6 +62,7 @@ private:
         bool is_left_;
         std::size_t last_selected_index_ = 0;
         int horizontal_offset_ = 0;
+        bool focused_ = false;
     };
 
     class JobSubframe : public Subframe {
@@ -69,6 +71,7 @@ private:
 
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         std::string RemoveSelected();
+        void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -88,12 +91,14 @@ private:
         int scroll_offset_ = 0;
         bool is_left_;
         int horizontal_offset_ = 0;
+        bool focused_ = false;
     };
 
     class ConfigSubframe : public Subframe {
     public:
         ConfigSubframe(bool is_left, ConverterConfig& config, bool& config_changed);
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+        void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -136,12 +141,14 @@ private:
 
         std::vector<Option> current_options_;
         const std::vector<std::string> submenu_titles_{"General options", "MP3 converter", "Opus converter"};
+        bool focused_ = false;
     };
 
     class SystemStatusSubframe : public Subframe {
     public:
         SystemStatusSubframe(bool is_left);
         void Tick();
+        void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -155,12 +162,14 @@ private:
     private:
         double progress_ = 0.0;
         double fill_speed_ = 0.003; // columns per frame
+        bool focused_ = false;
     };
 
     class CommandSubframe : public Subframe {
     public:
         CommandSubframe();
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+        void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -179,6 +188,7 @@ private:
         std::vector<std::string> options_{"Start", "Stop", "Exit"};
         int selected_index_ = 0;
         std::string feedback_ = "Ready";
+        bool focused_ = false;
     };
 
     std::vector<std::string> jobs_;

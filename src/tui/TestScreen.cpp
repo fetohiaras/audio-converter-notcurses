@@ -74,6 +74,12 @@ void TestScreen::Draw(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& s
     stdplane.get_dim(rows, cols);
     stdplane.putstr(0, ncpp::NCAlign::Center, "Test Screen");
 
+    file_subframe_.SetFocused(focus_ == Focus::Files);
+    job_subframe_.SetFocused(focus_ == Focus::Jobs);
+    config_subframe_.SetFocused(focus_ == Focus::Config);
+    status_subframe_.SetFocused(focus_ == Focus::Status);
+    command_subframe_.SetFocused(focus_ == Focus::Commands);
+
     file_subframe_.Resize(stdplane, rows, cols);
     job_subframe_.Resize(stdplane, rows, cols);
     config_subframe_.Resize(stdplane, rows, cols);
@@ -166,7 +172,12 @@ void TestScreen::FileSubframe::ComputeGeometry(unsigned parent_rows,
 }
 
 void TestScreen::FileSubframe::DrawContents() {
-    plane_->perimeter_rounded(0, 0, 0);
+    uint64_t channels = 0;
+    if (focused_) {
+        ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
+        ncchannels_set_bg_default(&channels);
+    }
+    plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "File Selection");
     DrawList();
 }
@@ -304,7 +315,12 @@ void TestScreen::JobSubframe::ComputeGeometry(unsigned parent_rows,
 }
 
 void TestScreen::JobSubframe::DrawContents() {
-    plane_->perimeter_rounded(0, 0, 0);
+    uint64_t channels = 0;
+    if (focused_) {
+        ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
+        ncchannels_set_bg_default(&channels);
+    }
+    plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Job List");
     DrawList();
 }
@@ -458,7 +474,12 @@ void TestScreen::SystemStatusSubframe::ComputeGeometry(unsigned parent_rows,
 }
 
 void TestScreen::ConfigSubframe::DrawContents() {
-    plane_->perimeter_rounded(0, 0, 0);
+    uint64_t channels = 0;
+    if (focused_) {
+        ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
+        ncchannels_set_bg_default(&channels);
+    }
+    plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Config Options");
 
     const int pad_top = 1;
@@ -572,7 +593,12 @@ void TestScreen::ConfigSubframe::DrawEditLine(const ContentArea& area) {
 }
 
 void TestScreen::SystemStatusSubframe::DrawContents() {
-    plane_->perimeter_rounded(0, 0, 0);
+    uint64_t channels = 0;
+    if (focused_) {
+        ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
+        ncchannels_set_bg_default(&channels);
+    }
+    plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "System Status");
 
     const int pad_top = 1;
@@ -628,7 +654,12 @@ void TestScreen::CommandSubframe::ComputeGeometry(unsigned parent_rows,
 }
 
 void TestScreen::CommandSubframe::DrawContents() {
-    plane_->perimeter_rounded(0, 0, 0);
+    uint64_t channels = 0;
+    if (focused_) {
+        ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
+        ncchannels_set_bg_default(&channels);
+    }
+    plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Commands");
 
     const int pad_top = 1;
