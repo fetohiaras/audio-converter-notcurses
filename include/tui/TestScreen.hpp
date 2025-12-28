@@ -2,14 +2,16 @@
 #define TUI_TESTSCREEN_HPP
 
 #include <memory>
+#include <vector>
 
 #include "tui/BaseScreen.hpp"
 #include "tui/Subframe.hpp"
+#include "tui/FileBrowser.hpp"
 
 // Minimal test screen: just a framed title for layout experiments.
 class TestScreen : public BaseScreen {
 public:
-    TestScreen() = default;
+    TestScreen();
     ~TestScreen() override = default;
 
     void Enter(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) override;
@@ -23,9 +25,19 @@ public:
                      const ncinput& details) override;
 
 private:
-    class TestSubframe : public Subframe {
+    enum class Focus {
+        Files,
+        Jobs
+    };
+
+    class FileSubframe : public Subframe {
     public:
+        explicit FileSubframe(bool is_left);
+
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+        void RefreshListing() { browser_.Load(browser_.CurrentPath()); }
+        const FileBrowser::Entry* CurrentEntry() const;
+        std::filesystem::path CurrentPath() const { return browser_.CurrentPath(); }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -40,18 +52,44 @@ private:
     private:
         void DrawList();
 
-        std::vector<std::string> items_{
-            "test string 1",  "test string 2",  "test string 3",  "test string 4",  "test string 5",
-            "test string 6",  "test string 7",  "test string 8",  "test string 9",  "test string 10",
-            "test string 11", "test string 12", "test string 13", "test string 14", "test string 15",
-            "test string 16", "test string 17", "test string 18", "test string 19", "test string 20",
-            "test string 21", "test string 22", "test string 23", "test string 24", "test string 25"
-        };
-        int selected_index_ = 0;
+        FileBrowser browser_;
         int scroll_offset_ = 0;
+        bool is_left_;
+        std::size_t last_selected_index_ = 0;
+        int horizontal_offset_ = 0;
     };
 
-    TestSubframe subframe_;
+    class JobSubframe : public Subframe {
+    public:
+        JobSubframe(bool is_left, std::vector<std::string>& jobs);
+
+        void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+        std::string RemoveSelected();
+
+    protected:
+        void ComputeGeometry(unsigned parent_rows,
+                             unsigned parent_cols,
+                             int& y,
+                             int& x,
+                             int& rows,
+                             int& cols) override;
+        void DrawContents() override;
+        void HandleInput(uint32_t input, const ncinput& details) override;
+
+    private:
+        void DrawList();
+
+        std::vector<std::string>* jobs_;
+        int selected_index_ = 0;
+        int scroll_offset_ = 0;
+        bool is_left_;
+        int horizontal_offset_ = 0;
+    };
+
+    std::vector<std::string> jobs_;
+    Focus focus_ = Focus::Files;
+    FileSubframe file_subframe_;
+    JobSubframe job_subframe_;
 };
 
 #endif // TUI_TESTSCREEN_HPP
