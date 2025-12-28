@@ -7,6 +7,7 @@
 #include "tui/Signal.hpp"
 #include "tui/StateMachine.hpp"
 #include "tui/WelcomeScreen.hpp"
+#include "tui/TestScreen.hpp"
 
 int main() {
     // Install SIGINT handler early so Ctrl-C can cleanly exit the loop.
@@ -23,7 +24,9 @@ int main() {
     // Wire up the state machine with the initial welcome screen.
     StateMachine machine;
     std::shared_ptr<WelcomeScreen> welcome_state = std::make_shared<WelcomeScreen>();
+    std::shared_ptr<TestScreen> test_state = std::make_shared<TestScreen>();
     machine.AddState("welcome", welcome_state);
+    machine.AddState("test", test_state);
     machine.TransitionTo("welcome", nc, *stdplane);
 
     // Enter the main loop: draw, poll, and dispatch to the active state.

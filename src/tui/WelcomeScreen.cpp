@@ -26,12 +26,17 @@ void WelcomeScreen::Exit(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane
 void WelcomeScreen::Draw(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
     (void)machine;
     (void)nc;
-    // Clear the screen and center a small message stack.
-    const std::vector<std::string> lines{
-        "Welcome to the audio converter!!!!!!!!!!!",
-        "Press Q or Ctrl-C to exit."
-    };
-    ClearAndCenterLines(stdplane, lines);
+    // Clear the screen, draw a rounded border, and center the welcome text.
+    stdplane.erase();
+    stdplane.perimeter_rounded(0, 0, 0);
+
+    unsigned rows = 0;
+    unsigned cols = 0;
+    stdplane.get_dim(rows, cols);
+    const int mid_row = static_cast<int>(rows) / 2;
+
+    stdplane.putstr(mid_row - 1, ncpp::NCAlign::Center, "Welcome to the audio converter");
+    stdplane.putstr(mid_row + 1, ncpp::NCAlign::Center, "Press D for the test screen, or Q/Ctrl-C to exit.");
 }
 
 void WelcomeScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
@@ -48,12 +53,15 @@ void WelcomeScreen::HandleInput(StateMachine& machine,
                                 ncpp::Plane& stdplane,
                                 uint32_t input,
                                 const ncinput& details) {
-    (void)machine;
-    (void)nc;
     (void)stdplane;
     (void)details;
 
-    // Keep behavior minimal for now: Q quits, resize triggers redraw on next loop.
+    // Keep behavior minimal for now: D jumps to the test screen; Q quits globally via the loop.
+    if (input == 'd' || input == 'D') {
+        machine.TransitionTo("test", nc, stdplane);
+        return;
+    }
+
     if (input == 'q' || input == 'Q' || input == NCKEY_ENTER) {
         exit_requested_ = true;
     }
