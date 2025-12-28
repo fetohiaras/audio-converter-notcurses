@@ -1,0 +1,27 @@
+# Build directories and cache
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Ninja/Make artifacts
+.ninja_deps
+.ninja_log
+Makefile
+
+# Binaries and static libs
+*.o
+*.a
+*.so
+*.dylib
+audio_converter_tui
+nc_hello
+
+# Editor/OS cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store

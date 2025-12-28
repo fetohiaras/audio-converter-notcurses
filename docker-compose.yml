@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  audio-converter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: audio-converter-notcurses:latest
+    tty: true           # keep a TTY for the TUI apps
+    stdin_open: true
+    working_dir: /app
+    entrypoint: ["/app/audio_converter_tui"]
