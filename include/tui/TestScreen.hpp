@@ -24,6 +24,9 @@ public:
 
 private:
     class TestSubframe : public Subframe {
+    public:
+        void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+
     protected:
         void ComputeGeometry(unsigned parent_rows,
                              unsigned parent_cols,
@@ -32,6 +35,13 @@ private:
                              int& rows,
                              int& cols) override;
         void DrawContents() override;
+        void HandleInput(uint32_t input, const ncinput& details) override;
+
+    private:
+        void DrawList();
+
+        std::vector<std::string> items_{"test string 1", "test string 2", "test string 3", "test string 4"};
+        int selected_index_ = 0;
     };
 
     TestSubframe subframe_;

@@ -42,11 +42,10 @@ void TestScreen::HandleInput(StateMachine& machine,
                              ncpp::Plane& stdplane,
                              uint32_t input,
                              const ncinput& details) {
-    (void)machine;
     (void)nc;
     (void)stdplane;
     (void)details;
-    // No interactions yet; this is a static layout placeholder.
+    subframe_.HandleInputPublic(input, details);
 }
 
 void TestScreen::TestSubframe::ComputeGeometry(unsigned parent_rows,
@@ -64,4 +63,44 @@ void TestScreen::TestSubframe::ComputeGeometry(unsigned parent_rows,
 void TestScreen::TestSubframe::DrawContents() {
     plane_->perimeter_rounded(0, 0, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Subframe 1");
+    DrawList();
+}
+
+void TestScreen::TestSubframe::DrawList() {
+    const int start_row = 1;
+    const int start_col = 2;
+    const int max_rows = plane_->get_dim_y();
+    const int content_width = plane_->get_dim_x() - start_col - 2; // leave right padding
+
+    for (int i = 0; i < static_cast<int>(items_.size()) && (start_row + i) < max_rows; ++i) {
+        const bool is_selected = (i == selected_index_);
+        if (is_selected) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+            for (int col = start_col - 1; col < start_col + content_width; ++col) {
+                plane_->putstr(start_row + i, col, " ");
+            }
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        plane_->putstr(start_row + i, start_col, items_[static_cast<std::size_t>(i)].c_str());
+    }
+
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::TestSubframe::HandleInput(uint32_t input, const ncinput& details) {
+    (void)details;
+    const int count = static_cast<int>(items_.size());
+    if (count == 0) {
+        return;
+    }
+
+    if (input == NCKEY_UP) {
+        selected_index_ = (selected_index_ - 1 + count) % count;
+    } else if (input == NCKEY_DOWN) {
+        selected_index_ = (selected_index_ + 1) % count;
+    }
 }
