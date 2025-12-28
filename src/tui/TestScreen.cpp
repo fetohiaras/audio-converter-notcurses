@@ -3,17 +3,36 @@
 #include "tui/TestScreen.hpp"
 
 #include <notcurses/notcurses.h>
+#include <cmath>
+#include <utility>
 
 #include "tui/StateMachine.hpp"
 
+namespace {
+constexpr int kMargin = 1;
+constexpr int kGap = 2;
+constexpr int kFooterRows = 4;
+
+void ComputeLayout(unsigned parent_rows, int& top_rows, int& mid_rows, int& footer_y) {
+    int avail = static_cast<int>(parent_rows) - (kMargin * 2) - (kGap * 2) - kFooterRows;
+    if (avail < 12) {
+        avail = 12;
+    }
+    top_rows = std::max(6, avail / 2);
+    mid_rows = std::max(6, avail - top_rows);
+    footer_y = kMargin + top_rows + kGap + mid_rows + kGap;
+}
+}
 TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
     : jobs_(),
-      focus_(Focus::Files),
+      focus_(Focus::Commands),
       config_(config),
       config_changed_(config_changed),
       file_subframe_(true),
       job_subframe_(false, jobs_),
-      config_subframe_(true, config_, config_changed_) {}
+      config_subframe_(true, config_, config_changed_),
+      status_subframe_(false),
+      command_subframe_() {}
 
 TestScreen::FileSubframe::FileSubframe(bool is_left) : is_left_(is_left) {}
 
@@ -24,6 +43,12 @@ TestScreen::ConfigSubframe::ConfigSubframe(bool is_left, ConverterConfig& config
     : config_(config), config_changed_(config_changed) {
     (void)is_left;
 }
+
+TestScreen::SystemStatusSubframe::SystemStatusSubframe(bool is_left) {
+    (void)is_left;
+}
+
+TestScreen::CommandSubframe::CommandSubframe() = default;
 
 void TestScreen::Enter(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
     (void)machine;
@@ -52,15 +77,20 @@ void TestScreen::Draw(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& s
     file_subframe_.Resize(stdplane, rows, cols);
     job_subframe_.Resize(stdplane, rows, cols);
     config_subframe_.Resize(stdplane, rows, cols);
+    status_subframe_.Resize(stdplane, rows, cols);
+    command_subframe_.Resize(stdplane, rows, cols);
     file_subframe_.Draw();
     job_subframe_.Draw();
     config_subframe_.Draw();
+    status_subframe_.Draw();
+    command_subframe_.Draw();
 }
 
 void TestScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
     (void)machine;
     (void)nc;
     (void)stdplane;
+    status_subframe_.Tick();
 }
 
 void TestScreen::HandleInput(StateMachine& machine,
@@ -72,13 +102,22 @@ void TestScreen::HandleInput(StateMachine& machine,
     (void)stdplane;
     (void)details;
     if (input == '\t') {
-        if (focus_ == Focus::Files) {
+        if (focus_ == Focus::Commands) {
+            focus_ = Focus::Files;
+        } else if (focus_ == Focus::Files) {
             focus_ = Focus::Jobs;
         } else if (focus_ == Focus::Jobs) {
             focus_ = Focus::Config;
+        } else if (focus_ == Focus::Config) {
+            focus_ = Focus::Status;
         } else {
-            focus_ = Focus::Files;
+            focus_ = Focus::Commands;
         }
+        return;
+    }
+
+    if (focus_ == Focus::Commands) {
+        command_subframe_.HandleInputPublic(input, details);
         return;
     }
 
@@ -115,13 +154,15 @@ void TestScreen::FileSubframe::ComputeGeometry(unsigned parent_rows,
                                                int& x,
                                                int& rows,
                                                int& cols) {
-    const int margin = 1;
-    const int gap = 2;
-    rows = std::max(6, static_cast<int>(parent_rows) / 2);
-    int available_width = static_cast<int>(parent_cols) - (margin * 2) - gap;
+    int top_rows = 0;
+    int mid_rows = 0;
+    int footer_y = 0;
+    ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
+    rows = top_rows;
+    int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
     cols = std::max(20, available_width / 2);
-    y = margin;
-    x = is_left_ ? margin : margin + cols + gap;
+    y = kMargin;
+    x = is_left_ ? kMargin : kMargin + cols + kGap;
 }
 
 void TestScreen::FileSubframe::DrawContents() {
@@ -251,13 +292,15 @@ void TestScreen::JobSubframe::ComputeGeometry(unsigned parent_rows,
                                               int& x,
                                               int& rows,
                                               int& cols) {
-    const int margin = 1;
-    const int gap = 2;
-    rows = std::max(6, static_cast<int>(parent_rows) / 2);
-    int available_width = static_cast<int>(parent_cols) - (margin * 2) - gap;
+    int top_rows = 0;
+    int mid_rows = 0;
+    int footer_y = 0;
+    ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
+    rows = top_rows;
+    int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
     cols = std::max(20, available_width / 2);
-    y = margin;
-    x = is_left_ ? margin : margin + cols + gap;
+    y = kMargin;
+    x = is_left_ ? kMargin : kMargin + cols + kGap;
 }
 
 void TestScreen::JobSubframe::DrawContents() {
@@ -381,19 +424,37 @@ std::string TestScreen::JobSubframe::RemoveSelected() {
     return removed;
 }
 void TestScreen::ConfigSubframe::ComputeGeometry(unsigned parent_rows,
-                                                 unsigned parent_cols,
-                                                 int& y,
-                                                 int& x,
-                                                 int& rows,
-                                                 int& cols) {
-    const int margin = 1;
-    const int gap = 2;
-    const int top_rows = std::max(6, static_cast<int>(parent_rows) / 2);
-    rows = std::max(6, static_cast<int>(parent_rows) - top_rows - gap - margin * 2);
-    int available_width = static_cast<int>(parent_cols) - (margin * 2) - gap;
+                                                  unsigned parent_cols,
+                                                  int& y,
+                                                  int& x,
+                                                  int& rows,
+                                                  int& cols) {
+    int top_rows = 0;
+    int mid_rows = 0;
+    int footer_y = 0;
+    ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
+    rows = mid_rows;
+    int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
     cols = std::max(20, available_width / 2);
-    y = margin + top_rows + gap;
-    x = margin;
+    y = kMargin + top_rows + kGap;
+    x = kMargin;
+}
+
+void TestScreen::SystemStatusSubframe::ComputeGeometry(unsigned parent_rows,
+                                                       unsigned parent_cols,
+                                                       int& y,
+                                                       int& x,
+                                                       int& rows,
+                                                       int& cols) {
+    int top_rows = 0;
+    int mid_rows = 0;
+    int footer_y = 0;
+    ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
+    rows = mid_rows;
+    int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
+    cols = std::max(20, available_width / 2);
+    y = kMargin + top_rows + kGap;
+    x = kMargin + cols + kGap;
 }
 
 void TestScreen::ConfigSubframe::DrawContents() {
@@ -508,6 +569,125 @@ void TestScreen::ConfigSubframe::DrawEditLine(const ContentArea& area) {
     plane_->set_bg_default();
     plane_->set_fg_default();
     plane_->putstr(row, col, line.c_str());
+}
+
+void TestScreen::SystemStatusSubframe::DrawContents() {
+    plane_->perimeter_rounded(0, 0, 0);
+    plane_->putstr(0, ncpp::NCAlign::Center, "System Status");
+
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 1;
+    const int pad_right = 2;
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+
+    const int bar_row = area.top;
+    const int bar_width = std::max(1, area.width - 1);
+    // Advance progress and wrap.
+    progress_ += fill_speed_;
+    if (progress_ >= static_cast<double>(bar_width)) {
+        progress_ = 0.0;
+    }
+    const int filled = static_cast<int>(progress_);
+
+    // Clear bar area.
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+    for (int col = 0; col < bar_width; ++col) {
+        plane_->putstr(bar_row, area.left + col, " ");
+    }
+
+    // Draw filled portion.
+    plane_->set_bg_rgb8(255, 255, 255);
+    plane_->set_fg_rgb8(0, 0, 0);
+    for (int col = 0; col < filled; ++col) {
+        plane_->putstr(bar_row, area.left + col, " ");
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::SystemStatusSubframe::Tick() {
+    // Progress is advanced during Draw when we know the bar width.
+}
+
+void TestScreen::CommandSubframe::ComputeGeometry(unsigned parent_rows,
+                                                  unsigned parent_cols,
+                                                  int& y,
+                                                  int& x,
+                                                  int& rows,
+                                                  int& cols) {
+    int top_rows = 0;
+    int mid_rows = 0;
+    int footer_y = 0;
+    ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
+    rows = kFooterRows;
+    cols = std::max(20, static_cast<int>(parent_cols) - (kMargin * 2));
+    y = footer_y;
+    x = kMargin;
+}
+
+void TestScreen::CommandSubframe::DrawContents() {
+    plane_->perimeter_rounded(0, 0, 0);
+    plane_->putstr(0, ncpp::NCAlign::Center, "Commands");
+
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 1;
+    const int pad_right = 2;
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+
+    DrawOptions(area);
+    DrawFeedback(area);
+}
+
+void TestScreen::CommandSubframe::DrawOptions(const ContentArea& area) {
+    const int row = area.top;
+    int col = area.left;
+    for (int i = 0; i < static_cast<int>(options_.size()); ++i) {
+        const bool is_selected = (i == selected_index_);
+        if (is_selected) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        plane_->putstr(row, col, options_[static_cast<std::size_t>(i)].c_str());
+        col += static_cast<int>(options_[static_cast<std::size_t>(i)].size()) + 4;
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
+    const int row = area.top + 1;
+    const int col = area.left;
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+    plane_->putstr(row, col, feedback_.c_str());
+}
+
+void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& details) {
+    (void)details;
+    const int count = static_cast<int>(options_.size());
+    if (count == 0) {
+        return;
+    }
+    if (input == NCKEY_LEFT) {
+        selected_index_ = (selected_index_ - 1 + count) % count;
+    } else if (input == NCKEY_RIGHT) {
+        selected_index_ = (selected_index_ + 1) % count;
+    } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+        const std::string& opt = options_[static_cast<std::size_t>(selected_index_)];
+        if (opt == "Start") {
+            feedback_ = "Conversion started";
+        } else if (opt == "Stop") {
+            feedback_ = "Conversion stopped";
+        } else if (opt == "Exit") {
+            feedback_ = "Exit requested";
+        }
+    }
 }
 
 void TestScreen::ConfigSubframe::HandleInput(uint32_t input, const ncinput& details) {

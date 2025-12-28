@@ -27,9 +27,11 @@ public:
 
 private:
     enum class Focus {
+        Commands,
         Files,
         Jobs,
-        Config
+        Config,
+        Status
     };
 
     class FileSubframe : public Subframe {
@@ -136,13 +138,58 @@ private:
         const std::vector<std::string> submenu_titles_{"General options", "MP3 converter", "Opus converter"};
     };
 
+    class SystemStatusSubframe : public Subframe {
+    public:
+        SystemStatusSubframe(bool is_left);
+        void Tick();
+
+    protected:
+        void ComputeGeometry(unsigned parent_rows,
+                             unsigned parent_cols,
+                             int& y,
+                             int& x,
+                             int& rows,
+                             int& cols) override;
+        void DrawContents() override;
+
+    private:
+        double progress_ = 0.0;
+        double fill_speed_ = 0.003; // columns per frame
+    };
+
+    class CommandSubframe : public Subframe {
+    public:
+        CommandSubframe();
+        void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
+
+    protected:
+        void ComputeGeometry(unsigned parent_rows,
+                             unsigned parent_cols,
+                             int& y,
+                             int& x,
+                             int& rows,
+                             int& cols) override;
+        void DrawContents() override;
+        void HandleInput(uint32_t input, const ncinput& details) override;
+
+    private:
+        void DrawOptions(const ContentArea& area);
+        void DrawFeedback(const ContentArea& area);
+
+        std::vector<std::string> options_{"Start", "Stop", "Exit"};
+        int selected_index_ = 0;
+        std::string feedback_ = "Ready";
+    };
+
     std::vector<std::string> jobs_;
-    Focus focus_ = Focus::Files;
+    Focus focus_ = Focus::Commands;
     ConverterConfig& config_;
     bool& config_changed_;
     FileSubframe file_subframe_;
     JobSubframe job_subframe_;
     ConfigSubframe config_subframe_;
+    SystemStatusSubframe status_subframe_;
+    CommandSubframe command_subframe_;
 };
 
 #endif // TUI_TESTSCREEN_HPP
