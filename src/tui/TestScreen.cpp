@@ -54,10 +54,11 @@ void TestScreen::TestSubframe::ComputeGeometry(unsigned parent_rows,
                                                int& x,
                                                int& rows,
                                                int& cols) {
-    rows = static_cast<int>(parent_rows) / 2;
-    cols = static_cast<int>(parent_cols) / 2;
-    y = static_cast<int>(parent_rows) / 4;
-    x = static_cast<int>(parent_cols) / 4;
+    // Target a smaller footprint to test adaptive layout.
+    rows = std::max(6, static_cast<int>(parent_rows) / 4);
+    cols = std::max(20, static_cast<int>(parent_cols) / 4);
+    y = (static_cast<int>(parent_rows) - rows) / 2;
+    x = (static_cast<int>(parent_cols) - cols) / 2;
 }
 
 void TestScreen::TestSubframe::DrawContents() {
@@ -67,13 +68,29 @@ void TestScreen::TestSubframe::DrawContents() {
 }
 
 void TestScreen::TestSubframe::DrawList() {
-    const int start_row = 1;
-    const int start_col = 2;
-    const int max_rows = plane_->get_dim_y();
-    const int content_width = plane_->get_dim_x() - start_col - 2; // leave right padding
+    // Paddings to keep text away from borders.
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 1;
+    const int pad_right = 2;
 
-    for (int i = 0; i < static_cast<int>(items_.size()) && (start_row + i) < max_rows; ++i) {
-        const bool is_selected = (i == selected_index_);
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+    const int start_row = area.top;
+    const int start_col = area.left;
+    const int content_width = area.width;
+    const int visible_rows = area.height;
+    const int item_count = static_cast<int>(items_.size());
+
+    // Clamp scroll offset to keep selection visible.
+    if (selected_index_ < scroll_offset_) {
+        scroll_offset_ = selected_index_;
+    } else if (selected_index_ >= scroll_offset_ + visible_rows) {
+        scroll_offset_ = selected_index_ - visible_rows + 1;
+    }
+
+    for (int i = 0; i < visible_rows && (scroll_offset_ + i) < item_count; ++i) {
+        const int item_index = scroll_offset_ + i;
+        const bool is_selected = (item_index == selected_index_);
         if (is_selected) {
             plane_->set_bg_rgb8(255, 255, 255);
             plane_->set_fg_rgb8(0, 0, 0);
@@ -84,7 +101,7 @@ void TestScreen::TestSubframe::DrawList() {
             plane_->set_bg_default();
             plane_->set_fg_default();
         }
-        plane_->putstr(start_row + i, start_col, items_[static_cast<std::size_t>(i)].c_str());
+        plane_->putstr(start_row + i, start_col, items_[static_cast<std::size_t>(item_index)].c_str());
     }
 
     plane_->set_bg_default();

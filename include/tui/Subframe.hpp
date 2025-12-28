@@ -36,6 +36,17 @@ protected:
     std::unique_ptr<ncpp::Plane> plane_;
     unsigned cached_rows_;
     unsigned cached_cols_;
+
+    struct ContentArea {
+        int top;
+        int left;
+        int height;
+        int width;
+    };
+
+    // Compute an inner content area after applying padding and ensuring min size.
+    ContentArea ContentBox(int pad_top, int pad_left, int pad_bottom, int pad_right, int min_height = 0, int min_width = 0) const;
 };
 
 #endif // TUI_SUBFRAME_HPP
+#include <algorithm>

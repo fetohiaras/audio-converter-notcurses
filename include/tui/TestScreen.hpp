@@ -40,8 +40,15 @@ private:
     private:
         void DrawList();
 
-        std::vector<std::string> items_{"test string 1", "test string 2", "test string 3", "test string 4"};
+        std::vector<std::string> items_{
+            "test string 1",  "test string 2",  "test string 3",  "test string 4",  "test string 5",
+            "test string 6",  "test string 7",  "test string 8",  "test string 9",  "test string 10",
+            "test string 11", "test string 12", "test string 13", "test string 14", "test string 15",
+            "test string 16", "test string 17", "test string 18", "test string 19", "test string 20",
+            "test string 21", "test string 22", "test string 23", "test string 24", "test string 25"
+        };
         int selected_index_ = 0;
+        int scroll_offset_ = 0;
     };
 
     TestSubframe subframe_;

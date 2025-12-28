@@ -38,3 +38,27 @@ void Subframe::HandleInput(uint32_t input, const ncinput& details) {
     (void)input;
     (void)details;
 }
+
+Subframe::ContentArea Subframe::ContentBox(int pad_top, int pad_left, int pad_bottom, int pad_right, int min_height, int min_width) const {
+    ContentArea area{0, 0, 0, 0};
+    if (plane_ == nullptr) {
+        return area;
+    }
+
+    const int total_rows = static_cast<int>(plane_->get_dim_y());
+    const int total_cols = static_cast<int>(plane_->get_dim_x());
+
+    area.top = std::max(0, pad_top);
+    area.left = std::max(0, pad_left);
+    area.height = std::max(0, total_rows - pad_top - pad_bottom);
+    area.width = std::max(0, total_cols - pad_left - pad_right);
+
+    if (min_height > 0) {
+        area.height = std::max(area.height, min_height);
+    }
+    if (min_width > 0) {
+        area.width = std::max(area.width, min_width);
+    }
+
+    return area;
+}
