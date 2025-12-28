@@ -1,0 +1,9 @@
+input_folder: "./input"
+output_folder: "./output"
+opus_frame_size: 960
+use_vbr: true
+default_bitrate_kbps: 128
+opus_bitrate_kbps: 128
+opus_use_vbr: true
+mp3_bitrate_kbps: 192
+mp3_use_cbr: false

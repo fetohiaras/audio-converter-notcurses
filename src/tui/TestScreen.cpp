@@ -6,16 +6,24 @@
 
 #include "tui/StateMachine.hpp"
 
-TestScreen::TestScreen()
+TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
     : jobs_(),
       focus_(Focus::Files),
+      config_(config),
+      config_changed_(config_changed),
       file_subframe_(true),
-      job_subframe_(false, jobs_) {}
+      job_subframe_(false, jobs_),
+      config_subframe_(true, config_, config_changed_) {}
 
 TestScreen::FileSubframe::FileSubframe(bool is_left) : is_left_(is_left) {}
 
 TestScreen::JobSubframe::JobSubframe(bool is_left, std::vector<std::string>& jobs)
     : jobs_(&jobs), is_left_(is_left) {}
+
+TestScreen::ConfigSubframe::ConfigSubframe(bool is_left, ConverterConfig& config, bool& config_changed)
+    : config_(config), config_changed_(config_changed) {
+    (void)is_left;
+}
 
 void TestScreen::Enter(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
     (void)machine;
@@ -43,8 +51,10 @@ void TestScreen::Draw(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& s
 
     file_subframe_.Resize(stdplane, rows, cols);
     job_subframe_.Resize(stdplane, rows, cols);
+    config_subframe_.Resize(stdplane, rows, cols);
     file_subframe_.Draw();
     job_subframe_.Draw();
+    config_subframe_.Draw();
 }
 
 void TestScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
@@ -62,7 +72,13 @@ void TestScreen::HandleInput(StateMachine& machine,
     (void)stdplane;
     (void)details;
     if (input == '\t') {
-        focus_ = (focus_ == Focus::Files) ? Focus::Jobs : Focus::Files;
+        if (focus_ == Focus::Files) {
+            focus_ = Focus::Jobs;
+        } else if (focus_ == Focus::Jobs) {
+            focus_ = Focus::Config;
+        } else {
+            focus_ = Focus::Files;
+        }
         return;
     }
 
@@ -86,8 +102,10 @@ void TestScreen::HandleInput(StateMachine& machine,
 
     if (focus_ == Focus::Files) {
         file_subframe_.HandleInputPublic(input, details);
-    } else {
+    } else if (focus_ == Focus::Jobs) {
         job_subframe_.HandleInputPublic(input, details);
+    } else {
+        config_subframe_.HandleInputPublic(input, details);
     }
 }
 
@@ -361,4 +379,277 @@ std::string TestScreen::JobSubframe::RemoveSelected() {
         selected_index_ = 0;
     }
     return removed;
+}
+void TestScreen::ConfigSubframe::ComputeGeometry(unsigned parent_rows,
+                                                 unsigned parent_cols,
+                                                 int& y,
+                                                 int& x,
+                                                 int& rows,
+                                                 int& cols) {
+    const int margin = 1;
+    const int gap = 2;
+    const int top_rows = std::max(6, static_cast<int>(parent_rows) / 2);
+    rows = std::max(6, static_cast<int>(parent_rows) - top_rows - gap - margin * 2);
+    int available_width = static_cast<int>(parent_cols) - (margin * 2) - gap;
+    cols = std::max(20, available_width / 2);
+    y = margin + top_rows + gap;
+    x = margin;
+}
+
+void TestScreen::ConfigSubframe::DrawContents() {
+    plane_->perimeter_rounded(0, 0, 0);
+    plane_->putstr(0, ncpp::NCAlign::Center, "Config Options");
+
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 2; // leave space for edit line
+    const int pad_right = 2;
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+
+    switch (mode_) {
+    case Mode::Submenus:
+        DrawSubmenus(area);
+        break;
+    case Mode::Options:
+    case Mode::EditBool:
+    case Mode::EditValue:
+        DrawOptions(area);
+        DrawEditLine(area);
+        break;
+    }
+}
+
+void TestScreen::ConfigSubframe::DrawSubmenus(const ContentArea& area) {
+    const int visible_rows = area.height;
+    const int start_row = area.top;
+    const int start_col = area.left;
+
+    if (submenu_index_ < scroll_offset_) {
+        scroll_offset_ = submenu_index_;
+    } else if (submenu_index_ >= scroll_offset_ + visible_rows) {
+        scroll_offset_ = submenu_index_ - visible_rows + 1;
+    }
+
+    for (int i = 0; i < visible_rows && (scroll_offset_ + i) < static_cast<int>(submenu_titles_.size()); ++i) {
+        const int idx = scroll_offset_ + i;
+        const bool is_selected = (idx == submenu_index_);
+        if (is_selected) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        plane_->putstr(start_row + i, start_col, submenu_titles_[static_cast<std::size_t>(idx)].c_str());
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::ConfigSubframe::DrawOptions(const ContentArea& area) {
+    const int visible_rows = area.height;
+    const int start_row = area.top;
+    const int start_col = area.left;
+
+    // ensure "Back" is first
+    std::vector<std::string> labels;
+    labels.reserve(current_options_.size() + 1);
+    labels.push_back("(Back)");
+    for (const Option& opt : current_options_) {
+        std::string label = opt.label + ": ";
+        if (opt.type == Option::Type::Bool) {
+            label += config_.GetBool(opt.key, false) ? "true" : "false";
+        } else if (opt.type == Option::Type::Int) {
+            label += std::to_string(config_.GetInt(opt.key, 0));
+        } else {
+            label += config_.GetString(opt.key, "");
+        }
+        labels.push_back(label);
+    }
+
+    const int total_items = static_cast<int>(labels.size());
+    if (option_index_ < scroll_offset_) {
+        scroll_offset_ = option_index_;
+    } else if (option_index_ >= scroll_offset_ + visible_rows) {
+        scroll_offset_ = option_index_ - visible_rows + 1;
+    }
+
+    for (int i = 0; i < visible_rows && (scroll_offset_ + i) < total_items; ++i) {
+        const int idx = scroll_offset_ + i;
+        const bool is_selected = (idx == option_index_);
+        if (is_selected) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        plane_->putstr(start_row + i, start_col, labels[static_cast<std::size_t>(idx)].c_str());
+    }
+
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::ConfigSubframe::DrawEditLine(const ContentArea& area) {
+    const int row = area.top + area.height; // first bottom padding row
+    const int col = area.left;
+    std::string line;
+
+    if (mode_ == Mode::EditBool) {
+        line = "Select: ";
+        line += (bool_choice_ == 0) ? "[true] false" : "true [false]";
+    } else if (mode_ == Mode::EditValue) {
+        line = "Select: " + edit_buffer_;
+    } else {
+        return;
+    }
+
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+    plane_->putstr(row, col, line.c_str());
+}
+
+void TestScreen::ConfigSubframe::HandleInput(uint32_t input, const ncinput& details) {
+    (void)details;
+
+    if (mode_ == Mode::Submenus) {
+        const int total = static_cast<int>(submenu_titles_.size());
+        if (input == NCKEY_UP) {
+            submenu_index_ = (submenu_index_ - 1 + total) % total;
+        } else if (input == NCKEY_DOWN) {
+            submenu_index_ = (submenu_index_ + 1) % total;
+        } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            EnterOptions();
+        }
+        return;
+    }
+
+    if (mode_ == Mode::Options) {
+        const int total_items = static_cast<int>(current_options_.size()) + 1; // includes Back
+        if (input == NCKEY_UP) {
+            option_index_ = (option_index_ - 1 + total_items) % total_items;
+        } else if (input == NCKEY_DOWN) {
+            option_index_ = (option_index_ + 1) % total_items;
+        } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            if (option_index_ == 0) {
+                EnterSubmenus();
+            } else {
+                const Option& opt = current_options_[static_cast<std::size_t>(option_index_ - 1)];
+                if (opt.type == Option::Type::Bool) {
+                    BeginEditBool();
+                    bool_choice_ = config_.GetBool(opt.key, false) ? 0 : 1;
+                } else if (opt.type == Option::Type::Int) {
+                    BeginEditValue();
+                    edit_buffer_ = std::to_string(config_.GetInt(opt.key, 0));
+                } else {
+                    BeginEditValue();
+                    edit_buffer_ = config_.GetString(opt.key, "");
+                }
+            }
+        }
+        return;
+    }
+
+    if (mode_ == Mode::EditBool) {
+        if (input == NCKEY_LEFT || input == NCKEY_RIGHT) {
+            bool_choice_ = 1 - bool_choice_;
+        } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            CommitBool();
+        }
+        return;
+    }
+
+    if (mode_ == Mode::EditValue) {
+        const Option* opt = (option_index_ > 0 && option_index_ <= static_cast<int>(current_options_.size()))
+                                ? &current_options_[static_cast<std::size_t>(option_index_ - 1)]
+                                : nullptr;
+        if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            CommitValue();
+        } else if (input == NCKEY_BACKSPACE || input == 127) {
+            if (!edit_buffer_.empty()) {
+                edit_buffer_.pop_back();
+            }
+        } else if (opt != nullptr) {
+            if (opt->type == Option::Type::Int) {
+                if (input >= '0' && input <= '9') {
+                    edit_buffer_.push_back(static_cast<char>(input));
+                }
+            } else {
+                // Accept printable ASCII for string options.
+                if (input >= 32 && input <= 126) {
+                    edit_buffer_.push_back(static_cast<char>(input));
+                }
+            }
+        }
+        return;
+    }
+}
+
+void TestScreen::ConfigSubframe::EnterOptions() {
+    mode_ = Mode::Options;
+    option_index_ = 0;
+    scroll_offset_ = 0;
+    current_options_.clear();
+
+    if (submenu_index_ == 0) {
+        current_options_.push_back(Option{"input_folder", "Input folder", Option::Type::String});
+        current_options_.push_back(Option{"output_folder", "Output folder", Option::Type::String});
+        current_options_.push_back(Option{"use_vbr", "Use VBR", Option::Type::Bool});
+    } else if (submenu_index_ == 1) {
+        current_options_.push_back(Option{"mp3_bitrate_kbps", "MP3 bitrate kbps", Option::Type::Int});
+        current_options_.push_back(Option{"mp3_use_cbr", "MP3 use CBR", Option::Type::Bool});
+    } else {
+        current_options_.push_back(Option{"opus_bitrate_kbps", "Opus bitrate kbps", Option::Type::Int});
+        current_options_.push_back(Option{"opus_use_vbr", "Opus use VBR", Option::Type::Bool});
+        current_options_.push_back(Option{"opus_frame_size", "Opus frame size", Option::Type::Int});
+    }
+}
+
+void TestScreen::ConfigSubframe::EnterSubmenus() {
+    mode_ = Mode::Submenus;
+    option_index_ = 0;
+    scroll_offset_ = 0;
+    ResetEditLine();
+}
+
+void TestScreen::ConfigSubframe::BeginEditBool() {
+    mode_ = Mode::EditBool;
+}
+
+void TestScreen::ConfigSubframe::BeginEditValue() {
+    mode_ = Mode::EditValue;
+}
+
+void TestScreen::ConfigSubframe::CommitBool() {
+    if (option_index_ == 0 || option_index_ > static_cast<int>(current_options_.size())) {
+        return;
+    }
+    const Option& opt = current_options_[static_cast<std::size_t>(option_index_ - 1)];
+    config_.SetBool(opt.key, bool_choice_ == 0);
+    config_changed_ = true;
+    ResetEditLine();
+    mode_ = Mode::Options;
+}
+
+void TestScreen::ConfigSubframe::CommitValue() {
+    if (option_index_ == 0 || option_index_ > static_cast<int>(current_options_.size())) {
+        return;
+    }
+    if (!edit_buffer_.empty()) {
+        const Option& opt = current_options_[static_cast<std::size_t>(option_index_ - 1)];
+        if (opt.type == Option::Type::Int) {
+            config_.SetInt(opt.key, std::stoi(edit_buffer_));
+        } else {
+            config_.SetString(opt.key, edit_buffer_);
+        }
+        config_changed_ = true;
+    }
+    ResetEditLine();
+    mode_ = Mode::Options;
+}
+
+void TestScreen::ConfigSubframe::ResetEditLine() {
+    bool_choice_ = 0;
+    edit_buffer_.clear();
 }
