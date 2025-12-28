@@ -36,6 +36,7 @@ add_executable(audio_converter_tui
   src/tui/BaseScreen.cpp
   src/tui/WelcomeScreen.cpp
   src/tui/TestScreen.cpp
+  src/tui/Subframe.cpp
   src/tui/StateMachine.cpp
   src/tui/Signal.cpp
 )

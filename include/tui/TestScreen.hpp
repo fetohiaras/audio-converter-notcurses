@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "tui/BaseScreen.hpp"
+#include "tui/Subframe.hpp"
 
 // Minimal test screen: just a framed title for layout experiments.
 class TestScreen : public BaseScreen {
@@ -22,11 +23,18 @@ public:
                      const ncinput& details) override;
 
 private:
-    void EnsureSubframe(ncpp::Plane& stdplane, unsigned rows, unsigned cols);
+    class TestSubframe : public Subframe {
+    protected:
+        void ComputeGeometry(unsigned parent_rows,
+                             unsigned parent_cols,
+                             int& y,
+                             int& x,
+                             int& rows,
+                             int& cols) override;
+        void DrawContents() override;
+    };
 
-    std::unique_ptr<ncpp::Plane> subframe_;
-    unsigned cached_rows_ = 0;
-    unsigned cached_cols_ = 0;
+    TestSubframe subframe_;
 };
 
 #endif // TUI_TESTSCREEN_HPP
