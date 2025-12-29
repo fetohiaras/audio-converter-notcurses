@@ -177,7 +177,7 @@ private:
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         void SetFocused(bool focused) { focused_ = focused; }
         const std::string& SelectedOption() const { return options_[static_cast<std::size_t>(selected_index_)]; }
-        void SetFeedback(const std::string& text) { feedback_ = text; }
+        void SetFeedback(const std::string& text);
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -196,6 +196,7 @@ private:
         std::vector<std::string> options_{"Start", "Stop", "Exit"};
         int selected_index_ = 0;
         std::string feedback_ = "Ready";
+        std::vector<std::string> log_;
         bool focused_ = false;
     };
 

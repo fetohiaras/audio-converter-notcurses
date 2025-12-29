@@ -156,6 +156,7 @@ void TestScreen::StartConversions() {
                     std::filesystem::path out_file = output_root / input.filename();
                     out_file.replace_extension(".opus");
                     converter.ConvertFile(input.string(), out_file.string());
+                    command_subframe_.SetFeedback(std::string("Converted ") + input.filename().string() + ".");
                 }
             } catch (const std::exception& e) {
                 command_subframe_.SetFeedback(std::string("Error: ") + e.what());
@@ -801,11 +802,22 @@ void TestScreen::CommandSubframe::DrawOptions(const ContentArea& area) {
 }
 
 void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
-    const int row = area.top;
-    const int col = area.left;
+    const int available_rows = std::max(0, area.height - 1);
+    const int total = static_cast<int>(log_.size());
+    const int lines_to_show = std::min(available_rows, total);
+    const int start_index = std::max(0, total - lines_to_show);
+
     plane_->set_bg_default();
     plane_->set_fg_default();
-    plane_->putstr(row, col, feedback_.c_str());
+    for (int i = 0; i < available_rows; ++i) {
+        const int row = area.top + i;
+        if (i < lines_to_show) {
+            const std::string& line = log_[static_cast<std::size_t>(start_index + i)];
+            plane_->putstr(row, area.left, line.c_str());
+        } else {
+            plane_->putstr(row, area.left, " ");
+        }
+    }
 }
 
 void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& details) {
@@ -821,12 +833,20 @@ void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& det
     } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
         const std::string& opt = options_[static_cast<std::size_t>(selected_index_)];
         if (opt == "Start") {
-            feedback_ = "Conversion started";
+            SetFeedback("Conversion started");
         } else if (opt == "Stop") {
-            feedback_ = "Conversion stopped";
+            SetFeedback("Conversion stopped");
         } else if (opt == "Exit") {
-            feedback_ = "Exit requested";
+            SetFeedback("Exit requested");
         }
+    }
+}
+
+void TestScreen::CommandSubframe::SetFeedback(const std::string& text) {
+    feedback_ = text;
+    log_.push_back(text);
+    if (log_.size() > 100) {
+        log_.erase(log_.begin(), log_.begin() + static_cast<std::ptrdiff_t>(log_.size() - 100));
     }
 }
 
