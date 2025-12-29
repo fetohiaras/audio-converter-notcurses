@@ -36,7 +36,7 @@ private:
         Files,
         Jobs,
         Config,
-        Status
+        JobConfig
     };
 
     class FileSubframe : public Subframe {
@@ -76,6 +76,7 @@ private:
 
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         std::string RemoveSelected();
+        void Tick();
         void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
@@ -90,6 +91,7 @@ private:
 
     private:
         void DrawList();
+        void DrawProgressBar();
 
         std::vector<std::string>* jobs_;
         int selected_index_ = 0;
@@ -97,6 +99,8 @@ private:
         bool is_left_;
         int horizontal_offset_ = 0;
         bool focused_ = false;
+        double progress_ = 0.0;
+        double fill_speed_ = 0.003; // columns per frame
     };
 
     class ConfigSubframe : public Subframe {
@@ -149,10 +153,9 @@ private:
         bool focused_ = false;
     };
 
-    class SystemStatusSubframe : public Subframe {
+    class JobConfigSubframe : public Subframe {
     public:
-        SystemStatusSubframe(bool is_left);
-        void Tick();
+        JobConfigSubframe(bool is_left);
         void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
@@ -165,8 +168,6 @@ private:
         void DrawContents() override;
 
     private:
-        double progress_ = 0.0;
-        double fill_speed_ = 0.003; // columns per frame
         bool focused_ = false;
     };
 
@@ -205,7 +206,7 @@ private:
     FileSubframe file_subframe_;
     JobSubframe job_subframe_;
     ConfigSubframe config_subframe_;
-    SystemStatusSubframe status_subframe_;
+    JobConfigSubframe job_config_subframe_;
     CommandSubframe command_subframe_;
 
     // Conversion worker

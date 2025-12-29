@@ -1,6 +1,7 @@
 # Build directories and cache
 build/
 CMakeFiles/
+out/
 CMakeCache.txt
 cmake_install.cmake
 compile_commands.json

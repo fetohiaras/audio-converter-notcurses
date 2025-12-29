@@ -43,7 +43,7 @@ TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
       file_subframe_(true),
       job_subframe_(false, jobs_),
       config_subframe_(true, config_, config_changed_),
-      status_subframe_(false),
+      job_config_subframe_(false),
       command_subframe_() {}
 
 TestScreen::~TestScreen() {
@@ -63,7 +63,7 @@ TestScreen::ConfigSubframe::ConfigSubframe(bool is_left, ConverterConfig& config
     (void)is_left;
 }
 
-TestScreen::SystemStatusSubframe::SystemStatusSubframe(bool is_left) {
+TestScreen::JobConfigSubframe::JobConfigSubframe(bool is_left) {
     (void)is_left;
 }
 
@@ -96,18 +96,18 @@ void TestScreen::Draw(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& s
     file_subframe_.SetFocused(focus_ == Focus::Files);
     job_subframe_.SetFocused(focus_ == Focus::Jobs);
     config_subframe_.SetFocused(focus_ == Focus::Config);
-    status_subframe_.SetFocused(focus_ == Focus::Status);
+    job_config_subframe_.SetFocused(focus_ == Focus::JobConfig);
     command_subframe_.SetFocused(focus_ == Focus::Commands);
 
     file_subframe_.Resize(stdplane, rows, cols);
     job_subframe_.Resize(stdplane, rows, cols);
     config_subframe_.Resize(stdplane, rows, cols);
-    status_subframe_.Resize(stdplane, rows, cols);
+    job_config_subframe_.Resize(stdplane, rows, cols);
     command_subframe_.Resize(stdplane, rows, cols);
     file_subframe_.Draw();
     job_subframe_.Draw();
     config_subframe_.Draw();
-    status_subframe_.Draw();
+    job_config_subframe_.Draw();
     command_subframe_.Draw();
 }
 
@@ -115,7 +115,7 @@ void TestScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane&
     (void)machine;
     (void)nc;
     (void)stdplane;
-    status_subframe_.Tick();
+    job_subframe_.Tick();
 }
 
 void TestScreen::StartConversions() {
@@ -196,7 +196,7 @@ void TestScreen::HandleInput(StateMachine& machine,
         } else if (focus_ == Focus::Jobs) {
             focus_ = Focus::Config;
         } else if (focus_ == Focus::Config) {
-            focus_ = Focus::Status;
+            focus_ = Focus::JobConfig;
         } else {
             focus_ = Focus::Commands;
         }
@@ -417,6 +417,7 @@ void TestScreen::JobSubframe::DrawContents() {
     }
     plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Job List");
+    DrawProgressBar();
     DrawList();
 }
 
@@ -425,7 +426,7 @@ void TestScreen::JobSubframe::DrawList() {
         return;
     }
 
-    const int pad_top = 1;
+    const int pad_top = 2; // leave room for progress bar
     const int pad_left = 2;
     const int pad_bottom = 1;
     const int pad_right = 2;
@@ -481,6 +482,36 @@ void TestScreen::JobSubframe::DrawList() {
 
     plane_->set_bg_default();
     plane_->set_fg_default();
+}
+
+void TestScreen::JobSubframe::DrawProgressBar() {
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 1;
+    const int pad_right = 2;
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+    const int bar_row = area.top;
+    const int bar_width = std::max(1, area.width - 1);
+    progress_ += fill_speed_;
+    if (progress_ >= static_cast<double>(bar_width)) {
+        progress_ = 0.0;
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+    for (int col = 0; col < bar_width; ++col) {
+        plane_->putstr(bar_row, area.left + col, " ");
+    }
+    plane_->set_bg_rgb8(255, 255, 255);
+    plane_->set_fg_rgb8(0, 0, 0);
+    for (int col = 0; col < static_cast<int>(progress_); ++col) {
+        plane_->putstr(bar_row, area.left + col, " ");
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::JobSubframe::Tick() {
+    // Progress advances during DrawProgressBar when width is known.
 }
 
 void TestScreen::JobSubframe::HandleInput(uint32_t input, const ncinput& details) {
@@ -551,12 +582,12 @@ void TestScreen::ConfigSubframe::ComputeGeometry(unsigned parent_rows,
     x = kMargin;
 }
 
-void TestScreen::SystemStatusSubframe::ComputeGeometry(unsigned parent_rows,
-                                                       unsigned parent_cols,
-                                                       int& y,
-                                                       int& x,
-                                                       int& rows,
-                                                       int& cols) {
+void TestScreen::JobConfigSubframe::ComputeGeometry(unsigned parent_rows,
+                                                    unsigned parent_cols,
+                                                    int& y,
+                                                    int& x,
+                                                    int& rows,
+                                                    int& cols) {
     int top_rows = 0;
     int mid_rows = 0;
     int footer_y = 0;
@@ -687,49 +718,23 @@ void TestScreen::ConfigSubframe::DrawEditLine(const ContentArea& area) {
     plane_->putstr(row, col, line.c_str());
 }
 
-void TestScreen::SystemStatusSubframe::DrawContents() {
+void TestScreen::JobConfigSubframe::DrawContents() {
     uint64_t channels = 0;
     if (focused_) {
         ncchannels_set_fg_rgb8(&channels, 150, 200, 255);
         ncchannels_set_bg_default(&channels);
     }
     plane_->perimeter_rounded(0, channels, 0);
-    plane_->putstr(0, ncpp::NCAlign::Center, "System Status");
+    plane_->putstr(0, ncpp::NCAlign::Center, "Job Configuration");
 
     const int pad_top = 1;
     const int pad_left = 2;
     const int pad_bottom = 1;
     const int pad_right = 2;
     const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
-
-    const int bar_row = area.top;
-    const int bar_width = std::max(1, area.width - 1);
-    // Advance progress and wrap.
-    progress_ += fill_speed_;
-    if (progress_ >= static_cast<double>(bar_width)) {
-        progress_ = 0.0;
-    }
-    const int filled = static_cast<int>(progress_);
-
-    // Clear bar area.
+    plane_->putstr(area.top, area.left, "Adjust per-job options (coming soon).");
     plane_->set_bg_default();
     plane_->set_fg_default();
-    for (int col = 0; col < bar_width; ++col) {
-        plane_->putstr(bar_row, area.left + col, " ");
-    }
-
-    // Draw filled portion.
-    plane_->set_bg_rgb8(255, 255, 255);
-    plane_->set_fg_rgb8(0, 0, 0);
-    for (int col = 0; col < filled; ++col) {
-        plane_->putstr(bar_row, area.left + col, " ");
-    }
-    plane_->set_bg_default();
-    plane_->set_fg_default();
-}
-
-void TestScreen::SystemStatusSubframe::Tick() {
-    // Progress is advanced during Draw when we know the bar width.
 }
 
 void TestScreen::CommandSubframe::ComputeGeometry(unsigned parent_rows,

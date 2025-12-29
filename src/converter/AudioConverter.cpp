@@ -274,8 +274,6 @@ void AudioConverter::ConvertAudio() {
 
     av_write_trailer(output_ctx_);
 
-    std::cout << "Converted " << frame_count << " audio frames." << std::endl;
-
     av_audio_fifo_free(fifo);
     av_packet_free(&input_packet);
     av_packet_free(&output_packet);
@@ -337,10 +335,9 @@ void AudioConverter::ConvertDirectory(const std::string& input_dir, const std::s
             std::filesystem::create_directories(output_file.parent_path());
 
             try {
-                std::cout << "Converting: " << input_file << " -> " << output_file.string() << std::endl;
                 ConvertFile(input_file, output_file.string());
             } catch (const std::exception& e) {
-                std::cerr << "Error converting " << input_file << ": " << e.what() << std::endl;
+                (void)e;
             }
         }
     }
