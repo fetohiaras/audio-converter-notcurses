@@ -290,6 +290,8 @@ void TestScreen::FileSubframe::DrawList() {
     const int start_col = area.left;
     const int content_width = area.width;
     const int visible_rows = area.height;
+    const int bar_col = start_col + content_width - 1;
+    const int text_width = std::max(0, content_width - 1);
     const std::vector<FileBrowser::Entry>& entries = browser_.Entries();
     const int item_count = static_cast<int>(entries.size());
     const int selected_index = static_cast<int>(browser_.SelectedIndex());
@@ -323,7 +325,7 @@ void TestScreen::FileSubframe::DrawList() {
         if (entries[static_cast<std::size_t>(item_index)].is_dir && label != "..") {
             label.append("/");
         }
-        const int line_width = std::max(0, content_width - 1);
+        const int line_width = text_width;
         int offset = horizontal_offset_;
         int max_offset = static_cast<int>(label.size()) - line_width;
         if (max_offset < 0) {
@@ -336,6 +338,24 @@ void TestScreen::FileSubframe::DrawList() {
             ? label.substr(static_cast<std::size_t>(offset), static_cast<std::size_t>(line_width))
             : label;
         plane_->putstr(start_row + i, start_col, view.c_str());
+        plane_->putstr(start_row + i, bar_col, " ");
+    }
+
+    // Draw scrollbar
+    if (item_count > visible_rows && visible_rows > 0) {
+        const int bar_height = visible_rows;
+        const int thumb_height = std::max(1, (visible_rows * bar_height) / item_count);
+        const int max_thumb_start = bar_height - thumb_height;
+        const int thumb_start = (item_count - visible_rows == 0) ? 0
+                                : (max_thumb_start * scroll_offset_) / (item_count - visible_rows);
+        plane_->set_bg_rgb8(200, 200, 200);
+        plane_->set_fg_rgb8(0, 0, 0);
+        for (int i = 0; i < thumb_height; ++i) {
+            const int row = start_row + thumb_start + i;
+            plane_->putstr(row, bar_col, " ");
+        }
+        plane_->set_bg_default();
+        plane_->set_fg_default();
     }
 
     plane_->set_bg_default();
@@ -437,6 +457,8 @@ void TestScreen::JobSubframe::DrawList() {
     const int start_col = area.left;
     const int content_width = area.width;
     const int visible_rows = area.height;
+    const int bar_col = start_col + content_width - 1;
+    const int text_width = std::max(0, content_width - 1);
     const int item_count = static_cast<int>(jobs_->size());
 
     if (selected_index_ < 0) selected_index_ = 0;
@@ -466,7 +488,7 @@ void TestScreen::JobSubframe::DrawList() {
             plane_->set_fg_default();
         }
         const std::string& label = jobs_->at(static_cast<std::size_t>(item_index));
-        const int line_width = std::max(0, content_width - 1);
+        const int line_width = text_width;
         int offset = horizontal_offset_;
         int max_offset = static_cast<int>(label.size()) - line_width;
         if (max_offset < 0) {
@@ -479,6 +501,24 @@ void TestScreen::JobSubframe::DrawList() {
             ? label.substr(static_cast<std::size_t>(offset), static_cast<std::size_t>(line_width))
             : label;
         plane_->putstr(start_row + i, start_col, view.c_str());
+        plane_->putstr(start_row + i, bar_col, " ");
+    }
+
+    // Draw scrollbar
+    if (item_count > visible_rows && visible_rows > 0) {
+        const int bar_height = visible_rows;
+        const int thumb_height = std::max(1, (visible_rows * bar_height) / item_count);
+        const int max_thumb_start = bar_height - thumb_height;
+        const int thumb_start = (item_count - visible_rows == 0) ? 0
+                                : (max_thumb_start * scroll_offset_) / (item_count - visible_rows);
+        plane_->set_bg_rgb8(200, 200, 200);
+        plane_->set_fg_rgb8(0, 0, 0);
+        for (int i = 0; i < thumb_height; ++i) {
+            const int row = start_row + thumb_start + i;
+            plane_->putstr(row, bar_col, " ");
+        }
+        plane_->set_bg_default();
+        plane_->set_fg_default();
     }
 
     plane_->set_bg_default();
