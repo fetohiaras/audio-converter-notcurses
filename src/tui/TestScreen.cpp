@@ -12,7 +12,7 @@
 namespace {
 constexpr int kMargin = 1;
 constexpr int kGap = 2;
-constexpr int kFooterRows = 4;
+constexpr int kFooterRows = 6;
 
 std::string NormalizePath(const std::string& raw) {
     std::string trimmed = raw;
@@ -578,7 +578,11 @@ void TestScreen::ConfigSubframe::ComputeGeometry(unsigned parent_rows,
     rows = mid_rows;
     int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
     cols = std::max(20, available_width / 2);
-    y = kMargin + top_rows + kGap;
+    int y_base = kMargin + top_rows + kGap - 2;
+    if (y_base < kMargin) {
+        y_base = kMargin;
+    }
+    y = y_base;
     x = kMargin;
 }
 
@@ -595,7 +599,11 @@ void TestScreen::JobConfigSubframe::ComputeGeometry(unsigned parent_rows,
     rows = mid_rows;
     int available_width = static_cast<int>(parent_cols) - (kMargin * 2) - kGap;
     cols = std::max(20, available_width / 2);
-    y = kMargin + top_rows + kGap;
+    int y_base = kMargin + top_rows + kGap - 2;
+    if (y_base < kMargin) {
+        y_base = kMargin;
+    }
+    y = y_base;
     x = kMargin + cols + kGap;
 }
 
@@ -749,7 +757,7 @@ void TestScreen::CommandSubframe::ComputeGeometry(unsigned parent_rows,
     ComputeLayout(parent_rows, top_rows, mid_rows, footer_y);
     rows = kFooterRows;
     cols = std::max(20, static_cast<int>(parent_cols) - (kMargin * 2));
-    y = footer_y;
+    y = footer_y - 2; // lift footer by 2 rows to accommodate taller area
     x = kMargin;
 }
 
@@ -768,12 +776,13 @@ void TestScreen::CommandSubframe::DrawContents() {
     const int pad_right = 2;
     const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
 
-    DrawOptions(area);
+    // Show feedback first (above), commands on bottom line.
     DrawFeedback(area);
+    DrawOptions(area);
 }
 
 void TestScreen::CommandSubframe::DrawOptions(const ContentArea& area) {
-    const int row = area.top;
+    const int row = area.top + area.height - 1;
     int col = area.left;
     for (int i = 0; i < static_cast<int>(options_.size()); ++i) {
         const bool is_selected = (i == selected_index_);
@@ -792,7 +801,7 @@ void TestScreen::CommandSubframe::DrawOptions(const ContentArea& area) {
 }
 
 void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
-    const int row = area.top + 1;
+    const int row = area.top;
     const int col = area.left;
     plane_->set_bg_default();
     plane_->set_fg_default();
