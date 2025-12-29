@@ -7,6 +7,7 @@
 #include <atomic>
 #include <mutex>
 #include <filesystem>
+#include <unordered_map>
 
 #include "tui/BaseScreen.hpp"
 #include "tui/Subframe.hpp"
@@ -155,8 +156,9 @@ private:
 
     class JobConfigSubframe : public Subframe {
     public:
-        JobConfigSubframe(bool is_left);
+        JobConfigSubframe(bool is_left, ConverterConfig& config);
         void SetFocused(bool focused) { focused_ = focused; }
+        void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -166,8 +168,27 @@ private:
                              int& rows,
                              int& cols) override;
         void DrawContents() override;
+        void HandleInput(uint32_t input, const ncinput& details) override;
 
     private:
+        enum class Mode { List, Choice };
+        struct Option {
+            std::string key;
+            std::string label;
+            std::vector<std::string> choices;
+        };
+
+        void DrawOptions();
+        void DrawChoice();
+        void DrawScrollbar(int start_row, int visible_rows, int item_count, int scroll_offset, int bar_col);
+
+        ConverterConfig& config_;
+        Mode mode_ = Mode::List;
+        std::vector<Option> options_;
+        std::unordered_map<std::string, int> selection_map_;
+        int selected_index_ = 0;
+        int scroll_offset_ = 0;
+        int choice_index_ = 0;
         bool focused_ = false;
     };
 

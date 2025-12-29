@@ -43,7 +43,7 @@ TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
       file_subframe_(true),
       job_subframe_(false, jobs_),
       config_subframe_(true, config_, config_changed_),
-      job_config_subframe_(false),
+      job_config_subframe_(false, config_),
       command_subframe_() {}
 
 TestScreen::~TestScreen() {
@@ -63,8 +63,18 @@ TestScreen::ConfigSubframe::ConfigSubframe(bool is_left, ConverterConfig& config
     (void)is_left;
 }
 
-TestScreen::JobConfigSubframe::JobConfigSubframe(bool is_left) {
+TestScreen::JobConfigSubframe::JobConfigSubframe(bool is_left, ConverterConfig& config)
+    : config_(config) {
     (void)is_left;
+    options_.push_back(Option{
+        "output_folder",
+        "Output folder",
+        {
+            std::string("Standard folder (") + config_.GetString("output_folder", "out") + ")",
+            "Same folder as input"
+        }
+    });
+    options_.push_back(Option{"use_vbr", "Use VBR", {"Yes", "No"}});
 }
 
 TestScreen::CommandSubframe::CommandSubframe() = default;
@@ -245,8 +255,10 @@ void TestScreen::HandleInput(StateMachine& machine,
         file_subframe_.HandleInputPublic(input, details);
     } else if (focus_ == Focus::Jobs) {
         job_subframe_.HandleInputPublic(input, details);
-    } else {
+    } else if (focus_ == Focus::Config) {
         config_subframe_.HandleInputPublic(input, details);
+    } else if (focus_ == Focus::JobConfig) {
+        job_config_subframe_.HandleInputPublic(input, details);
     }
 }
 
@@ -776,14 +788,154 @@ void TestScreen::JobConfigSubframe::DrawContents() {
     plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Job Configuration");
 
+    if (mode_ == Mode::List) {
+        DrawOptions();
+    } else {
+        DrawChoice();
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::JobConfigSubframe::DrawOptions() {
     const int pad_top = 1;
     const int pad_left = 2;
     const int pad_bottom = 1;
     const int pad_right = 2;
     const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
-    plane_->putstr(area.top, area.left, "Adjust per-job options (coming soon).");
+    const int visible_rows = area.height;
+    const int start_row = area.top;
+    const int start_col = area.left;
+    const int content_width = area.width;
+    const int bar_col = start_col + content_width - 1;
+    const int text_width = std::max(0, content_width - 1);
+    const int item_count = static_cast<int>(options_.size());
+
+    if (selected_index_ < scroll_offset_) {
+        scroll_offset_ = selected_index_;
+    } else if (selected_index_ >= scroll_offset_ + visible_rows) {
+        scroll_offset_ = selected_index_ - visible_rows + 1;
+    }
+
+    for (int i = 0; i < visible_rows; ++i) {
+        const int row = start_row + i;
+        plane_->putstr(row, start_col, " ");
+        plane_->putstr(row, bar_col, " ");
+    }
+
+    for (int i = 0; i < visible_rows && (scroll_offset_ + i) < item_count; ++i) {
+        const int item_index = scroll_offset_ + i;
+        const bool is_selected = (item_index == selected_index_);
+        if (is_selected) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        const std::string& label = options_[static_cast<std::size_t>(item_index)].label;
+        const std::string view = (text_width > 0)
+            ? label.substr(0, static_cast<std::size_t>(text_width))
+            : label;
+        plane_->putstr(start_row + i, start_col, view.c_str());
+    }
     plane_->set_bg_default();
     plane_->set_fg_default();
+
+    if (item_count > visible_rows && visible_rows > 0) {
+        const int bar_height = visible_rows;
+        const int thumb_height = std::max(1, (visible_rows * bar_height) / item_count);
+        const int max_thumb_start = bar_height - thumb_height;
+        const int thumb_start = (item_count - visible_rows == 0) ? 0
+                                : (max_thumb_start * scroll_offset_) / (item_count - visible_rows);
+        plane_->set_bg_rgb8(200, 200, 200);
+        plane_->set_fg_rgb8(0, 0, 0);
+        for (int i = 0; i < thumb_height; ++i) {
+            const int row = start_row + thumb_start + i;
+            plane_->putstr(row, bar_col, " ");
+        }
+        plane_->set_bg_default();
+        plane_->set_fg_default();
+    }
+}
+
+void TestScreen::JobConfigSubframe::DrawChoice() {
+    const int pad_top = 1;
+    const int pad_left = 2;
+    const int pad_bottom = 1;
+    const int pad_right = 2;
+    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+    int row = area.top;
+    const int col = area.left;
+
+    const Option& opt = options_[static_cast<std::size_t>(selected_index_)];
+
+    // Back entry
+    if (choice_index_ == 0) {
+        plane_->set_bg_rgb8(255, 255, 255);
+        plane_->set_fg_rgb8(0, 0, 0);
+    } else {
+        plane_->set_bg_default();
+        plane_->set_fg_default();
+    }
+    plane_->putstr(row++, col, "(Back)");
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+
+    plane_->putstr(row++, col, (opt.label + ":").c_str());
+
+    for (int i = 0; i < static_cast<int>(opt.choices.size()); ++i) {
+        if (choice_index_ == i + 1) {
+            plane_->set_bg_rgb8(255, 255, 255);
+            plane_->set_fg_rgb8(0, 0, 0);
+        } else {
+            plane_->set_bg_default();
+            plane_->set_fg_default();
+        }
+        plane_->putstr(row++, col, opt.choices[static_cast<std::size_t>(i)].c_str());
+    }
+    plane_->set_bg_default();
+    plane_->set_fg_default();
+}
+
+void TestScreen::JobConfigSubframe::HandleInput(uint32_t input, const ncinput& details) {
+    (void)details;
+    if (mode_ == Mode::List) {
+        const int item_count = static_cast<int>(options_.size());
+        if (item_count == 0) {
+            return;
+        }
+        if (input == NCKEY_UP || input == NCKEY_BUTTON4) {
+            selected_index_ = (selected_index_ - 1 + item_count) % item_count;
+            if (selected_index_ < scroll_offset_) {
+                scroll_offset_ = selected_index_;
+            }
+        } else if (input == NCKEY_DOWN || input == NCKEY_BUTTON5) {
+            selected_index_ = (selected_index_ + 1) % item_count;
+            if (selected_index_ >= scroll_offset_ + ContentBox(1, 2, 1, 2, 0, 0).height) {
+                ++scroll_offset_;
+            }
+        } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            mode_ = Mode::Choice;
+            choice_index_ = 0;
+        }
+        return;
+    }
+
+    const Option& opt = options_[static_cast<std::size_t>(selected_index_)];
+    const int choice_count = static_cast<int>(opt.choices.size()) + 1; // include Back
+    if (input == NCKEY_UP || input == NCKEY_BUTTON4) {
+        choice_index_ = (choice_index_ - 1 + choice_count) % choice_count;
+    } else if (input == NCKEY_DOWN || input == NCKEY_BUTTON5) {
+        choice_index_ = (choice_index_ + 1) % choice_count;
+    } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+        if (choice_index_ == 0) {
+            mode_ = Mode::List;
+            return;
+        }
+        selection_map_[opt.key] = choice_index_ - 1;
+        mode_ = Mode::List;
+    }
 }
 
 void TestScreen::CommandSubframe::ComputeGeometry(unsigned parent_rows,
