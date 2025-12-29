@@ -813,14 +813,38 @@ void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
 
     plane_->set_bg_default();
     plane_->set_fg_default();
+    const int bar_col = area.left + area.width - 1;
+    const int text_width = std::max(0, area.width - 1);
     for (int i = 0; i < available_rows; ++i) {
         const int row = area.top + i;
-        if (i < lines_to_show) {
+        if (i < lines_to_show && text_width > 0) {
             const std::string& line = log_[static_cast<std::size_t>(start_index + i)];
-            plane_->putstr(row, area.left, line.c_str());
+            plane_->putstr(row, area.left, line.substr(0, static_cast<std::size_t>(text_width)).c_str());
         } else {
             plane_->putstr(row, area.left, " ");
         }
+        // Clear scrollbar column; thumb is drawn below.
+        plane_->putstr(row, bar_col, " ");
+    }
+
+    // Draw a simple scrollbar thumb if there is more content than fits.
+    if (total > lines_to_show && available_rows > 0) {
+        const int bar_height = available_rows;
+        const int thumb_height = std::max(1, (lines_to_show * bar_height) / total);
+        const int max_thumb_start = bar_height - thumb_height;
+        int thumb_start = 0;
+        if (max_offset > 0) {
+            // Invert so scrolling up moves thumb up (toward top).
+            thumb_start = max_thumb_start - ((max_thumb_start * log_offset_) / max_offset);
+        }
+        plane_->set_bg_rgb8(200, 200, 200);
+        plane_->set_fg_rgb8(0, 0, 0);
+        for (int i = 0; i < thumb_height; ++i) {
+            const int row = area.top + thumb_start + i;
+            plane_->putstr(row, bar_col, " ");
+        }
+        plane_->set_bg_default();
+        plane_->set_fg_default();
     }
 }
 
