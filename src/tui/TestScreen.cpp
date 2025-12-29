@@ -805,7 +805,11 @@ void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
     const int available_rows = std::max(0, area.height - 1);
     const int total = static_cast<int>(log_.size());
     const int lines_to_show = std::min(available_rows, total);
-    const int start_index = std::max(0, total - lines_to_show);
+    int max_offset = std::max(0, total - lines_to_show);
+    if (log_offset_ > max_offset) {
+        log_offset_ = max_offset;
+    }
+    const int start_index = std::max(0, total - lines_to_show - log_offset_);
 
     plane_->set_bg_default();
     plane_->set_fg_default();
@@ -830,6 +834,8 @@ void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& det
         selected_index_ = (selected_index_ - 1 + count) % count;
     } else if (input == NCKEY_RIGHT) {
         selected_index_ = (selected_index_ + 1) % count;
+    } else if (input == NCKEY_UP || input == NCKEY_BUTTON4) {
+        ++log_offset_;
     } else if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
         const std::string& opt = options_[static_cast<std::size_t>(selected_index_)];
         if (opt == "Start") {
@@ -838,6 +844,10 @@ void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& det
             SetFeedback("Conversion stopped");
         } else if (opt == "Exit") {
             SetFeedback("Exit requested");
+        }
+    } else if (input == NCKEY_DOWN || input == NCKEY_BUTTON5) {
+        if (log_offset_ > 0) {
+            --log_offset_;
         }
     }
 }
@@ -848,6 +858,7 @@ void TestScreen::CommandSubframe::SetFeedback(const std::string& text) {
     if (log_.size() > 100) {
         log_.erase(log_.begin(), log_.begin() + static_cast<std::ptrdiff_t>(log_.size() - 100));
     }
+    log_offset_ = 0;
 }
 
 void TestScreen::ConfigSubframe::HandleInput(uint32_t input, const ncinput& details) {

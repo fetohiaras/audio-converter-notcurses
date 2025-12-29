@@ -197,6 +197,7 @@ private:
         int selected_index_ = 0;
         std::string feedback_ = "Ready";
         std::vector<std::string> log_;
+        int log_offset_ = 0;
         bool focused_ = false;
     };
 
