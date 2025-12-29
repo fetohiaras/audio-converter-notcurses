@@ -3,17 +3,22 @@
 
 #include <memory>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <filesystem>
 
 #include "tui/BaseScreen.hpp"
 #include "tui/Subframe.hpp"
 #include "tui/FileBrowser.hpp"
 #include "tui/Config.hpp"
+#include "converter/MP3ToOpusConverter.hpp"
 
 // Minimal test screen: just a framed title for layout experiments.
 class TestScreen : public BaseScreen {
 public:
     explicit TestScreen(ConverterConfig& config, bool& config_changed);
-    ~TestScreen() override = default;
+    ~TestScreen() override;
 
     void Enter(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) override;
     void Exit(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) override;
@@ -170,6 +175,8 @@ private:
         CommandSubframe();
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         void SetFocused(bool focused) { focused_ = focused; }
+        const std::string& SelectedOption() const { return options_[static_cast<std::size_t>(selected_index_)]; }
+        void SetFeedback(const std::string& text) { feedback_ = text; }
 
     protected:
         void ComputeGeometry(unsigned parent_rows,
@@ -200,6 +207,15 @@ private:
     ConfigSubframe config_subframe_;
     SystemStatusSubframe status_subframe_;
     CommandSubframe command_subframe_;
+
+    // Conversion worker
+    std::thread worker_;
+    std::atomic<bool> stop_flag_{false};
+    std::atomic<bool> converting_{false};
+    std::mutex jobs_mutex_;
+
+    void StartConversions();
+    void StopConversions();
 };
 
 #endif // TUI_TESTSCREEN_HPP

@@ -5,6 +5,7 @@
 #include <notcurses/notcurses.h>
 #include <cmath>
 #include <utility>
+#include <filesystem>
 
 #include "tui/StateMachine.hpp"
 
@@ -12,6 +13,17 @@ namespace {
 constexpr int kMargin = 1;
 constexpr int kGap = 2;
 constexpr int kFooterRows = 4;
+
+std::string NormalizePath(const std::string& raw) {
+    std::string trimmed = raw;
+    while (!trimmed.empty() && (trimmed.front() == '\"' || trimmed.front() == '\'')) {
+        trimmed.erase(trimmed.begin());
+    }
+    while (!trimmed.empty() && (trimmed.back() == '\"' || trimmed.back() == '\'')) {
+        trimmed.pop_back();
+    }
+    return trimmed;
+}
 
 void ComputeLayout(unsigned parent_rows, int& top_rows, int& mid_rows, int& footer_y) {
     int avail = static_cast<int>(parent_rows) - (kMargin * 2) - (kGap * 2) - kFooterRows;
@@ -33,6 +45,13 @@ TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
       config_subframe_(true, config_, config_changed_),
       status_subframe_(false),
       command_subframe_() {}
+
+TestScreen::~TestScreen() {
+    stop_flag_.store(true, std::memory_order_relaxed);
+    if (worker_.joinable()) {
+        worker_.join();
+    }
+}
 
 TestScreen::FileSubframe::FileSubframe(bool is_left) : is_left_(is_left) {}
 
@@ -99,6 +118,68 @@ void TestScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane&
     status_subframe_.Tick();
 }
 
+void TestScreen::StartConversions() {
+    if (converting_.load(std::memory_order_relaxed)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(jobs_mutex_);
+    if (jobs_.empty()) {
+        command_subframe_.SetFeedback("No jobs to convert");
+        return;
+    }
+    stop_flag_.store(false, std::memory_order_relaxed);
+    converting_.store(true, std::memory_order_relaxed);
+    worker_ = std::thread([this]() {
+        while (!stop_flag_.load(std::memory_order_relaxed)) {
+            std::string job_path;
+            {
+                std::lock_guard<std::mutex> guard(jobs_mutex_);
+                if (jobs_.empty()) {
+                    break;
+                }
+                job_path = jobs_.front();
+                jobs_.erase(jobs_.begin());
+            }
+
+            try {
+                const int bitrate_kbps = config_.GetInt("opus_bitrate_kbps", 128);
+                MP3ToOpusConverter converter(bitrate_kbps * 1000);
+                std::filesystem::path input(job_path);
+                std::string raw_output = config_.GetString("output_folder", "out");
+                std::filesystem::path output_root = std::filesystem::absolute(NormalizePath(raw_output));
+                if (!std::filesystem::exists(output_root)) {
+                    std::filesystem::create_directories(output_root);
+                }
+                if (std::filesystem::is_directory(input)) {
+                    converter.ConvertDirectory(input.string(), output_root.string());
+                } else {
+                    std::filesystem::path out_file = output_root / input.filename();
+                    out_file.replace_extension(".opus");
+                    converter.ConvertFile(input.string(), out_file.string());
+                }
+            } catch (const std::exception& e) {
+                command_subframe_.SetFeedback(std::string("Error: ") + e.what());
+                break;
+            }
+        }
+
+        if (!stop_flag_.load(std::memory_order_relaxed)) {
+            command_subframe_.SetFeedback("All jobs finished.");
+        } else {
+            command_subframe_.SetFeedback("Conversion stopped");
+        }
+        converting_.store(false, std::memory_order_relaxed);
+    });
+}
+
+void TestScreen::StopConversions() {
+    stop_flag_.store(true, std::memory_order_relaxed);
+    if (worker_.joinable()) {
+        worker_.join();
+    }
+    converting_.store(false, std::memory_order_relaxed);
+}
+
 void TestScreen::HandleInput(StateMachine& machine,
                              ncpp::NotCurses& nc,
                              ncpp::Plane& stdplane,
@@ -123,7 +204,21 @@ void TestScreen::HandleInput(StateMachine& machine,
     }
 
     if (focus_ == Focus::Commands) {
-        command_subframe_.HandleInputPublic(input, details);
+        if (input == NCKEY_ENTER || input == '\n' || input == '\r') {
+            const std::string& opt = command_subframe_.SelectedOption();
+            if (opt == "Start") {
+                StartConversions();
+                command_subframe_.SetFeedback("Conversion started");
+            } else if (opt == "Stop") {
+                StopConversions();
+                command_subframe_.SetFeedback("Conversion stopped");
+            } else if (opt == "Exit") {
+                machine.SetRunning(false);
+                command_subframe_.SetFeedback("Exit requested");
+            }
+        } else {
+            command_subframe_.HandleInputPublic(input, details);
+        }
         return;
     }
 

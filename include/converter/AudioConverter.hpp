@@ -3,9 +3,11 @@
 
 #include <string>
 
+extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswresample/swresample.h>
+}
 
 // Abstract base for audio converters built on libav*.
 // Derived classes supply codec-specific configuration while the base handles
