@@ -1,4 +1,5 @@
 #include <utility>
+#include <functional>
 
 #include "tui/TestScreen.hpp"
 
@@ -79,6 +80,7 @@ TestScreen::JobConfigSubframe::JobConfigSubframe(bool is_left, ConverterConfig& 
 
 TestScreen::CommandSubframe::CommandSubframe() = default;
 
+
 void TestScreen::Enter(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane& stdplane) {
     (void)machine;
     (void)nc;
@@ -128,6 +130,45 @@ void TestScreen::Update(StateMachine& machine, ncpp::NotCurses& nc, ncpp::Plane&
     job_subframe_.Tick();
 }
 
+// Resolve a user-supplied path against a base, ensuring it stays within base and is not a symlink.
+namespace {
+std::filesystem::path SafeOutputPath(const std::filesystem::path& raw,
+                                     const std::filesystem::path& base,
+                                     const std::function<void(const std::string&)>& feedback) {
+    std::filesystem::path normalized = NormalizePath(raw.string());
+    if (normalized.empty()) {
+        feedback("Invalid output path; using default.");
+        return base;
+    }
+    std::error_code ec;
+    std::filesystem::path abs_base = std::filesystem::weakly_canonical(base, ec);
+    if (ec) {
+        abs_base = base;
+    }
+    std::filesystem::path weak = std::filesystem::weakly_canonical(normalized, ec);
+    if (ec) {
+        feedback("Output path error; using default.");
+        return abs_base;
+    }
+    const auto base_str = abs_base.string();
+    const auto weak_str = weak.string();
+    if (weak_str.rfind(base_str, 0) != 0) {
+        feedback("Output outside allowed folder; using default.");
+        return abs_base;
+    }
+    // Reject symlinks in the resolved path.
+    std::filesystem::path current;
+    for (const auto& part : weak) {
+        current /= part;
+        if (std::filesystem::is_symlink(current, ec)) {
+            feedback("Symlink in output path blocked; using default.");
+            return abs_base;
+        }
+    }
+    return weak;
+}
+} // namespace
+
 void TestScreen::StartConversions() {
     if (converting_.load(std::memory_order_relaxed)) {
         return;
@@ -155,10 +196,15 @@ void TestScreen::StartConversions() {
                 const int bitrate_kbps = config_.GetInt("opus_bitrate_kbps", 128);
                 MP3ToOpusConverter converter(bitrate_kbps * 1000);
                 std::filesystem::path input(job_path);
-                std::string raw_output = config_.GetString("output_folder", "out");
-                std::filesystem::path output_root = std::filesystem::absolute(NormalizePath(raw_output));
+                std::filesystem::path raw_output = config_.GetString("output_folder", "out");
+                auto fb = [this](const std::string& msg) { command_subframe_.SetFeedback(msg); };
+                std::filesystem::path output_root = SafeOutputPath(raw_output, std::filesystem::absolute("out"), fb);
                 if (!std::filesystem::exists(output_root)) {
                     std::filesystem::create_directories(output_root);
+                    // Restrict permissions (best-effort, POSIX).
+                    std::filesystem::permissions(output_root,
+                                                 std::filesystem::perms::owner_all,
+                                                 std::filesystem::perm_options::replace);
                 }
                 if (std::filesystem::is_directory(input)) {
                     converter.ConvertDirectory(input.string(), output_root.string());
@@ -870,6 +916,9 @@ void TestScreen::JobConfigSubframe::DrawChoice() {
 
     const Option& opt = options_[static_cast<std::size_t>(selected_index_)];
 
+    // Option title first.
+    plane_->putstr(row++, col, (opt.label + ":").c_str());
+
     // Back entry
     if (choice_index_ == 0) {
         plane_->set_bg_rgb8(255, 255, 255);
@@ -881,8 +930,6 @@ void TestScreen::JobConfigSubframe::DrawChoice() {
     plane_->putstr(row++, col, "(Back)");
     plane_->set_bg_default();
     plane_->set_fg_default();
-
-    plane_->putstr(row++, col, (opt.label + ":").c_str());
 
     for (int i = 0; i < static_cast<int>(opt.choices.size()); ++i) {
         if (choice_index_ == i + 1) {
