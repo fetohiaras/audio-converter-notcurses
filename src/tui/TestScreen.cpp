@@ -42,7 +42,7 @@ TestScreen::TestScreen(ConverterConfig& config, bool& config_changed)
       config_(config),
       config_changed_(config_changed),
       file_subframe_(true),
-      job_subframe_(false, jobs_),
+      job_subframe_(false, jobs_, jobs_mutex_),
       config_subframe_(true, config_, config_changed_),
       job_config_subframe_(false, config_),
       command_subframe_() {}
@@ -56,8 +56,8 @@ TestScreen::~TestScreen() {
 
 TestScreen::FileSubframe::FileSubframe(bool is_left) : is_left_(is_left) {}
 
-TestScreen::JobSubframe::JobSubframe(bool is_left, std::vector<std::string>& jobs)
-    : jobs_(&jobs), is_left_(is_left) {}
+TestScreen::JobSubframe::JobSubframe(bool is_left, std::vector<std::string>& jobs, std::mutex& jobs_mutex)
+    : jobs_(&jobs), is_left_(is_left), jobs_mutex_(&jobs_mutex) {}
 
 TestScreen::ConfigSubframe::ConfigSubframe(bool is_left, ConverterConfig& config, bool& config_changed)
     : config_(config), config_changed_(config_changed) {
@@ -172,6 +172,9 @@ std::filesystem::path SafeOutputPath(const std::filesystem::path& raw,
 void TestScreen::StartConversions() {
     if (converting_.load(std::memory_order_relaxed)) {
         return;
+    }
+    if (worker_.joinable()) {
+        worker_.join();
     }
     std::lock_guard<std::mutex> lock(jobs_mutex_);
     if (jobs_.empty()) {
@@ -518,7 +521,8 @@ void TestScreen::JobSubframe::DrawContents() {
 }
 
 void TestScreen::JobSubframe::DrawList() {
-    if (jobs_ == nullptr) {
+    std::lock_guard<std::mutex> lock(*jobs_mutex_);
+    if (jobs_ == nullptr || jobs_->empty()) {
         return;
     }
 
@@ -614,8 +618,15 @@ void TestScreen::JobSubframe::DrawProgressBar() {
         plane_->putstr(bar_row, area.left + col, " ");
     }
     int filled = 0;
-    if (converting_display_) {
-        filled = static_cast<int>(progress_value_ * bar_width);
+    bool local_converting = false;
+    double local_progress_value = 0.0;
+    {
+        std::lock_guard<std::mutex> lock(convert_mutex_);
+        local_converting = converting_display_;
+        local_progress_value = progress_value_;
+    }
+    if (local_converting) {
+        filled = static_cast<int>(local_progress_value * bar_width);
     } else {
         progress_ += fill_speed_;
         if (progress_ >= static_cast<double>(bar_width)) {
@@ -640,6 +651,7 @@ void TestScreen::JobSubframe::Tick() {
 }
 
 void TestScreen::JobSubframe::BeginConversionDisplay(const std::string& file_name) {
+    std::lock_guard<std::mutex> lock(convert_mutex_);
     converting_display_ = true;
     converting_file_ = file_name;
     progress_ = 0.0;
@@ -647,14 +659,21 @@ void TestScreen::JobSubframe::BeginConversionDisplay(const std::string& file_nam
 }
 
 void TestScreen::JobSubframe::EndConversionDisplay() {
+    std::lock_guard<std::mutex> lock(convert_mutex_);
     converting_display_ = false;
     converting_file_.clear();
     progress_ = 0.0;
     progress_value_ = 0.0;
 }
 
+void TestScreen::JobSubframe::UpdateProgress(double value) {
+    std::lock_guard<std::mutex> lock(convert_mutex_);
+    progress_value_ = value;
+}
+
 void TestScreen::JobSubframe::HandleInput(uint32_t input, const ncinput& details) {
     (void)details;
+    std::lock_guard<std::mutex> lock(*jobs_mutex_);
     if (jobs_ == nullptr || jobs_->empty()) {
         return;
     }
@@ -688,6 +707,7 @@ void TestScreen::JobSubframe::HandleInput(uint32_t input, const ncinput& details
 }
 
 std::string TestScreen::JobSubframe::RemoveSelected() {
+    std::lock_guard<std::mutex> lock(*jobs_mutex_);
     if (jobs_ == nullptr || jobs_->empty()) {
         return {};
     }
@@ -1081,6 +1101,7 @@ void TestScreen::CommandSubframe::DrawOptions(const ContentArea& area) {
 }
 
 void TestScreen::CommandSubframe::DrawFeedback(const ContentArea& area) {
+    std::lock_guard<std::mutex> lock(log_mutex_);
     const int available_rows = std::max(0, area.height - 1);
     const int total = static_cast<int>(log_.size());
     const int lines_to_show = std::min(available_rows, total);
@@ -1156,6 +1177,7 @@ void TestScreen::CommandSubframe::HandleInput(uint32_t input, const ncinput& det
 }
 
 void TestScreen::CommandSubframe::SetFeedback(const std::string& text) {
+    std::lock_guard<std::mutex> lock(log_mutex_);
     feedback_ = text;
     log_.push_back(text);
     if (log_.size() > 100) {

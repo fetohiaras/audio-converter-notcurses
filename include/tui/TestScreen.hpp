@@ -73,14 +73,14 @@ private:
 
     class JobSubframe : public Subframe {
     public:
-        JobSubframe(bool is_left, std::vector<std::string>& jobs);
+        JobSubframe(bool is_left, std::vector<std::string>& jobs, std::mutex& jobs_mutex);
 
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         std::string RemoveSelected();
         void Tick();
         void BeginConversionDisplay(const std::string& file_name);
         void EndConversionDisplay();
-        void UpdateProgress(double value) { progress_value_ = value; }
+        void UpdateProgress(double value);
         void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
@@ -108,6 +108,8 @@ private:
         bool converting_display_ = false;
         std::string converting_file_;
         double progress_value_ = 0.0;
+        std::mutex* jobs_mutex_ = nullptr;
+        std::mutex convert_mutex_;
     };
 
     class ConfigSubframe : public Subframe {
@@ -226,6 +228,7 @@ private:
         std::vector<std::string> log_;
         int log_offset_ = 0;
         bool focused_ = false;
+        std::mutex log_mutex_;
     };
 
     std::vector<std::string> jobs_;
