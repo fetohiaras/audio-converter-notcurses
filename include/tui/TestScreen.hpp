@@ -78,6 +78,9 @@ private:
         void HandleInputPublic(uint32_t input, const ncinput& details) { HandleInput(input, details); }
         std::string RemoveSelected();
         void Tick();
+        void BeginConversionDisplay(const std::string& file_name);
+        void EndConversionDisplay();
+        void UpdateProgress(double value) { progress_value_ = value; }
         void SetFocused(bool focused) { focused_ = focused; }
 
     protected:
@@ -102,6 +105,9 @@ private:
         bool focused_ = false;
         double progress_ = 0.0;
         double fill_speed_ = 0.003; // columns per frame
+        bool converting_display_ = false;
+        std::string converting_file_;
+        double progress_value_ = 0.0;
     };
 
     class ConfigSubframe : public Subframe {

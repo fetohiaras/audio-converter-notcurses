@@ -2,6 +2,7 @@
 #define AUDIO_CONVERTER_HPP
 
 #include <string>
+#include <functional>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -24,6 +25,9 @@ public:
     // Derived classes can override ShouldConvertFile if they need a different extension filter.
     void ConvertDirectory(const std::string& input_dir, const std::string& output_dir);
 
+    // Register a progress callback (0.0 - 1.0) that the converter will invoke as samples are processed.
+    void SetProgressCallback(std::function<void(double)> cb) { progress_cb_ = std::move(cb); }
+
 protected:
     // Codec/format hooks that derived classes must implement.
     virtual AVCodecID OutputCodecId() const = 0;
@@ -41,6 +45,7 @@ protected:
     AVCodecContext* output_codec_ctx_;
     SwrContext* resample_ctx_;
     int audio_stream_index_;
+    std::function<void(double)> progress_cb_;
 
 private:
     void InitLibav();

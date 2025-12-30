@@ -152,6 +152,12 @@ void AudioConverter::ConvertAudio() {
 
     int64_t pts = 0;
     int frame_count = 0;
+    int64_t processed_samples = 0;
+    int64_t expected_samples = 0;
+    if (input_ctx_ != nullptr && input_ctx_->duration > 0 && output_codec_ctx_ != nullptr) {
+        const double duration_seconds = static_cast<double>(input_ctx_->duration) / AV_TIME_BASE;
+        expected_samples = static_cast<int64_t>(duration_seconds * output_codec_ctx_->sample_rate);
+    }
 
     while (av_read_frame(input_ctx_, input_packet) >= 0) {
         if (input_packet->stream_index == audio_stream_index_) {
@@ -211,6 +217,7 @@ void AudioConverter::ConvertAudio() {
 
                     output_frame->pts = pts;
                     pts += frame_size;
+                    processed_samples += frame_size;
 
                     if (avcodec_send_frame(output_codec_ctx_, output_frame) < 0) {
                         throw std::runtime_error("Encoder send failed");
@@ -224,6 +231,14 @@ void AudioConverter::ConvertAudio() {
                     }
 
                     av_frame_unref(output_frame);
+
+                    if (progress_cb_ && expected_samples > 0) {
+                        double progress = static_cast<double>(processed_samples) / static_cast<double>(expected_samples);
+                        if (progress > 1.0) {
+                            progress = 1.0;
+                        }
+                        progress_cb_(progress);
+                    }
                 }
 
                 av_frame_unref(resampled_frame);
@@ -251,6 +266,7 @@ void AudioConverter::ConvertAudio() {
 
         output_frame->pts = pts;
         pts += remaining;
+        processed_samples += remaining;
 
         if (avcodec_send_frame(output_codec_ctx_, output_frame) < 0) {
             throw std::runtime_error("Failed to flush frame");
@@ -263,6 +279,14 @@ void AudioConverter::ConvertAudio() {
         }
 
         av_frame_unref(output_frame);
+
+        if (progress_cb_ && expected_samples > 0) {
+            double progress = static_cast<double>(processed_samples) / static_cast<double>(expected_samples);
+            if (progress > 1.0) {
+                progress = 1.0;
+            }
+            progress_cb_(progress);
+        }
     }
 
     avcodec_send_frame(output_codec_ctx_, nullptr);
@@ -280,6 +304,10 @@ void AudioConverter::ConvertAudio() {
     av_frame_free(&input_frame);
     av_frame_free(&resampled_frame);
     av_frame_free(&output_frame);
+
+    if (progress_cb_) {
+        progress_cb_(1.0);
+    }
 }
 
 void AudioConverter::Cleanup() {

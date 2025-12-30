@@ -182,43 +182,49 @@ void TestScreen::StartConversions() {
     converting_.store(true, std::memory_order_relaxed);
     worker_ = std::thread([this]() {
         while (!stop_flag_.load(std::memory_order_relaxed)) {
-            std::string job_path;
-            {
-                std::lock_guard<std::mutex> guard(jobs_mutex_);
-                if (jobs_.empty()) {
-                    break;
+                std::string job_path;
+                {
+                    std::lock_guard<std::mutex> guard(jobs_mutex_);
+                    if (jobs_.empty()) {
+                        break;
+                    }
+                    job_path = jobs_.front();
+                    jobs_.erase(jobs_.begin());
                 }
-                job_path = jobs_.front();
-                jobs_.erase(jobs_.begin());
-            }
 
-            try {
-                const int bitrate_kbps = config_.GetInt("opus_bitrate_kbps", 128);
-                MP3ToOpusConverter converter(bitrate_kbps * 1000);
-                std::filesystem::path input(job_path);
-                std::filesystem::path raw_output = config_.GetString("output_folder", "out");
-                auto fb = [this](const std::string& msg) { command_subframe_.SetFeedback(msg); };
-                std::filesystem::path output_root = SafeOutputPath(raw_output, std::filesystem::absolute("out"), fb);
-                if (!std::filesystem::exists(output_root)) {
-                    std::filesystem::create_directories(output_root);
-                    // Restrict permissions (best-effort, POSIX).
-                    std::filesystem::permissions(output_root,
-                                                 std::filesystem::perms::owner_all,
-                                                 std::filesystem::perm_options::replace);
-                }
-                if (std::filesystem::is_directory(input)) {
+                try {
+                    const int bitrate_kbps = config_.GetInt("opus_bitrate_kbps", 128);
+                    MP3ToOpusConverter converter(bitrate_kbps * 1000);
+                    std::filesystem::path input(job_path);
+                    std::filesystem::path raw_output = config_.GetString("output_folder", "out");
+                    auto fb = [this](const std::string& msg) { command_subframe_.SetFeedback(msg); };
+                    std::filesystem::path output_root = SafeOutputPath(raw_output, std::filesystem::absolute("out"), fb);
+                    job_subframe_.BeginConversionDisplay(input.filename().string());
+                    if (!std::filesystem::exists(output_root)) {
+                        std::filesystem::create_directories(output_root);
+                        // Restrict permissions (best-effort, POSIX).
+                        std::filesystem::permissions(output_root,
+                                                     std::filesystem::perms::owner_all,
+                                                     std::filesystem::perm_options::replace);
+                    }
+                    if (std::filesystem::is_directory(input)) {
                     converter.ConvertDirectory(input.string(), output_root.string());
                 } else {
                     std::filesystem::path out_file = output_root / input.filename();
                     out_file.replace_extension(".opus");
+                    converter.SetProgressCallback([this](double p) {
+                        job_subframe_.UpdateProgress(p);
+                    });
                     converter.ConvertFile(input.string(), out_file.string());
                     command_subframe_.SetFeedback(std::string("Converted ") + input.filename().string() + ".");
                 }
-            } catch (const std::exception& e) {
-                command_subframe_.SetFeedback(std::string("Error: ") + e.what());
-                break;
+                    job_subframe_.EndConversionDisplay();
+                } catch (const std::exception& e) {
+                    command_subframe_.SetFeedback(std::string("Error: ") + e.what());
+                    job_subframe_.EndConversionDisplay();
+                    break;
+                }
             }
-        }
 
         if (!stop_flag_.load(std::memory_order_relaxed)) {
             command_subframe_.SetFeedback("All jobs finished.");
@@ -496,8 +502,19 @@ void TestScreen::JobSubframe::DrawContents() {
     }
     plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Job List");
-    DrawProgressBar();
-    DrawList();
+    if (converting_display_) {
+        DrawProgressBar();
+        const int pad_top = 2;
+        const int pad_left = 2;
+        const int pad_bottom = 1;
+        const int pad_right = 2;
+        const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
+        plane_->putstr(area.top, area.left, "Converting:");
+        plane_->putstr(area.top + 1, area.left, converting_file_.c_str());
+    } else {
+        DrawProgressBar();
+        DrawList();
+    }
 }
 
 void TestScreen::JobSubframe::DrawList() {
@@ -591,18 +608,27 @@ void TestScreen::JobSubframe::DrawProgressBar() {
     const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
     const int bar_row = area.top;
     const int bar_width = std::max(1, area.width - 1);
-    progress_ += fill_speed_;
-    if (progress_ >= static_cast<double>(bar_width)) {
-        progress_ = 0.0;
-    }
     plane_->set_bg_default();
     plane_->set_fg_default();
     for (int col = 0; col < bar_width; ++col) {
         plane_->putstr(bar_row, area.left + col, " ");
     }
+    int filled = 0;
+    if (converting_display_) {
+        filled = static_cast<int>(progress_value_ * bar_width);
+    } else {
+        progress_ += fill_speed_;
+        if (progress_ >= static_cast<double>(bar_width)) {
+            progress_ = 0.0;
+        }
+        filled = static_cast<int>(progress_);
+    }
+    if (filled > bar_width) {
+        filled = bar_width;
+    }
     plane_->set_bg_rgb8(255, 255, 255);
     plane_->set_fg_rgb8(0, 0, 0);
-    for (int col = 0; col < static_cast<int>(progress_); ++col) {
+    for (int col = 0; col < filled; ++col) {
         plane_->putstr(bar_row, area.left + col, " ");
     }
     plane_->set_bg_default();
@@ -611,6 +637,20 @@ void TestScreen::JobSubframe::DrawProgressBar() {
 
 void TestScreen::JobSubframe::Tick() {
     // Progress advances during DrawProgressBar when width is known.
+}
+
+void TestScreen::JobSubframe::BeginConversionDisplay(const std::string& file_name) {
+    converting_display_ = true;
+    converting_file_ = file_name;
+    progress_ = 0.0;
+    progress_value_ = 0.0;
+}
+
+void TestScreen::JobSubframe::EndConversionDisplay() {
+    converting_display_ = false;
+    converting_file_.clear();
+    progress_ = 0.0;
+    progress_value_ = 0.0;
 }
 
 void TestScreen::JobSubframe::HandleInput(uint32_t input, const ncinput& details) {
