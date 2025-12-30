@@ -95,7 +95,7 @@ private:
 
     private:
         void DrawList();
-        void DrawProgressBar();
+        void DrawProgressBar(int bar_row, int bar_left, int bar_width);
 
         std::vector<std::string>* jobs_;
         int selected_index_ = 0;

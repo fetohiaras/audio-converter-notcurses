@@ -506,16 +506,17 @@ void TestScreen::JobSubframe::DrawContents() {
     plane_->perimeter_rounded(0, channels, 0);
     plane_->putstr(0, ncpp::NCAlign::Center, "Job List");
     if (converting_display_) {
-        DrawProgressBar();
-        const int pad_top = 2;
+        const int pad_top = 1;
         const int pad_left = 2;
         const int pad_bottom = 1;
         const int pad_right = 2;
         const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
         plane_->putstr(area.top, area.left, "Converting:");
         plane_->putstr(area.top + 1, area.left, converting_file_.c_str());
+        const int bar_width = std::max(1, area.width - 1);
+        const int bar_row = area.top + 2;
+        DrawProgressBar(bar_row, area.left, bar_width);
     } else {
-        DrawProgressBar();
         DrawList();
     }
 }
@@ -526,7 +527,7 @@ void TestScreen::JobSubframe::DrawList() {
         return;
     }
 
-    const int pad_top = 2; // leave room for progress bar
+    const int pad_top = 1;
     const int pad_left = 2;
     const int pad_bottom = 1;
     const int pad_right = 2;
@@ -604,18 +605,11 @@ void TestScreen::JobSubframe::DrawList() {
     plane_->set_fg_default();
 }
 
-void TestScreen::JobSubframe::DrawProgressBar() {
-    const int pad_top = 1;
-    const int pad_left = 2;
-    const int pad_bottom = 1;
-    const int pad_right = 2;
-    const ContentArea area = ContentBox(pad_top, pad_left, pad_bottom, pad_right, 0, 0);
-    const int bar_row = area.top;
-    const int bar_width = std::max(1, area.width - 1);
+void TestScreen::JobSubframe::DrawProgressBar(int bar_row, int bar_left, int bar_width) {
     plane_->set_bg_default();
     plane_->set_fg_default();
     for (int col = 0; col < bar_width; ++col) {
-        plane_->putstr(bar_row, area.left + col, " ");
+        plane_->putstr(bar_row, bar_left + col, " ");
     }
     int filled = 0;
     bool local_converting = false;
@@ -640,7 +634,7 @@ void TestScreen::JobSubframe::DrawProgressBar() {
     plane_->set_bg_rgb8(255, 255, 255);
     plane_->set_fg_rgb8(0, 0, 0);
     for (int col = 0; col < filled; ++col) {
-        plane_->putstr(bar_row, area.left + col, " ");
+        plane_->putstr(bar_row, bar_left + col, " ");
     }
     plane_->set_bg_default();
     plane_->set_fg_default();
